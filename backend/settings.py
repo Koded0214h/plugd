@@ -10,11 +10,15 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
+import dj_database_url
 from pathlib import Path
+from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+load_dotenv()
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -37,9 +41,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Third party Apps
+    'rest_framework',
+    'rest_framework_simplejwt', 
+    'corsheaders',
+    'drf_spectacular',  
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -72,12 +83,21 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_URL=os.getenv("DATABASE_URL")
+
+if(DATABASE_URL):
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -115,3 +135,97 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+# Simple JWT settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+
+    'JTI_CLAIM': 'jti',
+}
+
+# CORS settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# For development only - allows all origins
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+
+# drf-spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Plug\'d 2.0 API',
+    'DESCRIPTION': """
+        PlugD 2.0 is a complete rebuild of the service marketplace platform. This API powers a structured 
+        ecosystem that connects Customers, Service Providers, and Hubs (Agencies). 
+        
+        The platform replaces manual workflows and chaotic communication channels like Instagram DMs with 
+        an automated, intuitive digital marketplace. Key features include account verification, a flexible 
+        booking engine, automated payment flows, request and quote management, admin dashboards, and a 
+        coupon system.
+        
+        Built for scalability and trust, PlugD 2.0 provides clear user roles and structured workflows 
+        to create a reliable experience for all users.""",
+    'VERSION': '2.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    
+    # Swagger UI settings
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+    },
+    
+    # API tags for organizing endpoints
+    'TAGS': [
+        {'name': 'Authentication', 'description': 'JWT authentication endpoints'},
+        {'name': 'Customers', 'description': 'Endpoints for customer users'},
+        {'name': 'Service Providers', 'description': 'Endpoints for service providers'},
+        {'name': 'Hubs', 'description': 'Endpoints for agencies and coordinators'},
+        {'name': 'Admin', 'description': 'Platform administration endpoints'},
+        {'name': 'Bookings', 'description': 'Booking and calendar management'},
+        {'name': 'Requests & Quotes', 'description': 'Service request and quote workflow'},
+        {'name': 'Payments', 'description': 'Payment processing and payouts'},
+        {'name': 'Coupons', 'description': 'Promotional coupon management'},
+    ],
+    
+    # Contact information
+    'CONTACT': {
+        'name': 'Plug\'d Support',
+        'email': 'support@plugd.com',
+    },
+}
