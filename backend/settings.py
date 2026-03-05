@@ -45,8 +45,13 @@ INSTALLED_APPS = [
     # Third party Apps
     'rest_framework',
     'rest_framework_simplejwt', 
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
-    'drf_spectacular',  
+    'drf_spectacular', 
+    'phonenumber_field',  
+
+    # Local apps
+    'users', 
 ]
 
 MIDDLEWARE = [
@@ -136,12 +141,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# REST Framework settings
+AUTH_USER_MODEL = 'users.User'
+
+# REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -152,80 +156,58 @@ REST_FRAMEWORK = {
     ),
 }
 
-# Simple JWT settings
+# Simple JWT
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
-
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
-
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
-
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
-
     'JTI_CLAIM': 'jti',
 }
 
-# CORS settings
+# CORS
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
 ]
 
-# For development only - allows all origins
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
-# drf-spectacular settings
+# drf-spectacular
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Plug\'d 2.0 API',
-    'DESCRIPTION': """
-        PlugD 2.0 is a complete rebuild of the service marketplace platform. This API powers a structured 
-        ecosystem that connects Customers, Service Providers, and Hubs (Agencies). 
-        
-        The platform replaces manual workflows and chaotic communication channels like Instagram DMs with 
-        an automated, intuitive digital marketplace. Key features include account verification, a flexible 
-        booking engine, automated payment flows, request and quote management, admin dashboards, and a 
-        coupon system.
-        
-        Built for scalability and trust, PlugD 2.0 provides clear user roles and structured workflows 
-        to create a reliable experience for all users.""",
+    'TITLE': "Plug'd 2.0 API",
+    'DESCRIPTION': (
+        'PlugD 2.0 is a complete rebuild of the service marketplace platform. '
+        'This API powers a structured ecosystem that connects Customers, Service Providers, '
+        'and Hubs (Agencies).\n\n'
+        'The platform replaces manual workflows and chaotic communication channels like '
+        'Instagram DMs with an automated, intuitive digital marketplace. Key features include '
+        'account verification, a flexible booking engine, automated payment flows, request and '
+        'quote management, admin dashboards, and a coupon system.\n\n'
+        'Built for scalability and trust, PlugD 2.0 provides clear user roles and structured '
+        'workflows to create a reliable experience for all users.'
+    ),
     'VERSION': '2.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
-    
-    # Swagger UI settings
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,
         'persistAuthorization': True,
     },
-    
-    # API tags for organizing endpoints
-    'TAGS': [
-        {'name': 'Authentication', 'description': 'JWT authentication endpoints'},
-        {'name': 'Customers', 'description': 'Endpoints for customer users'},
-        {'name': 'Service Providers', 'description': 'Endpoints for service providers'},
-        {'name': 'Hubs', 'description': 'Endpoints for agencies and coordinators'},
-        {'name': 'Admin', 'description': 'Platform administration endpoints'},
-        {'name': 'Bookings', 'description': 'Booking and calendar management'},
-        {'name': 'Requests & Quotes', 'description': 'Service request and quote workflow'},
-        {'name': 'Payments', 'description': 'Payment processing and payouts'},
-        {'name': 'Coupons', 'description': 'Promotional coupon management'},
-    ],
-    
-    # Contact information
     'CONTACT': {
-        'name': 'Plug\'d Support',
+        'name': "Plug'd Support",
         'email': 'support@plugd.com',
     },
 }

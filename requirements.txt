@@ -3,12 +3,14 @@ attrs==25.4.0
 dj-database-url==3.1.2
 Django==6.0.2
 django-cors-headers==4.9.0
+django-phonenumber-field==8.4.0
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.29.0
 inflection==0.5.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+phonenumbers==9.0.25
 pillow==12.1.1
 PyJWT==2.11.0
 python-dotenv==1.2.1
