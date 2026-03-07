@@ -16,11 +16,19 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from django.conf import settings
 from django.conf.urls.static import static
 
+def health_check(request):
+    return JsonResponse({"status": "healthy", "message": "Plug'd 2.0 API is running"})
+
 urlpatterns = [
+
+    path('', health_check, name='health-check'),  
+
+    
     path('admin/', admin.site.urls),
     
     # API Schema

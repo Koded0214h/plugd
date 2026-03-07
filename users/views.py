@@ -3,14 +3,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import logout
 from django.utils import timezone
-from .models import User, VerificationRequest
+from .models import User, VerificationRequest, ProviderProfile
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer,
     CustomTokenObtainPairSerializer, UserProfileSerializer,
     ChangePasswordSerializer, VerificationRequestSerializer,
-    VerificationReviewSerializer
+    VerificationReviewSerializer, ProviderProfileSerializer
 )
 
 class RegisterView(generics.CreateAPIView):
@@ -198,3 +199,24 @@ class AdminVerificationReviewView(APIView):
             'message': f'Verification {status_choice} successfully',
             'user': UserProfileSerializer(user).data
         })
+
+
+class ProviderOwnProfileView(generics.RetrieveUpdateAPIView):
+    """Retrieve or update the authenticated provider's own profile."""
+    serializer_class = ProviderProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_object(self):
+        user = self.request.user
+        if user.role != 'provider':
+            raise PermissionDenied("Only providers can access this endpoint.")
+        profile, created = ProviderProfile.objects.get_or_create(user=user)
+        return profile
+
+class PublicProviderProfileView(generics.RetrieveAPIView):
+    """Retrieve a provider's public profile by user ID."""
+    queryset = ProviderProfile.objects.select_related('user').all()
+    serializer_class = ProviderProfileSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'user_id'   # we'll use user UUID to fetch
+    lookup_url_kwarg = 'user_id'

@@ -1,8 +1,10 @@
-from django.contrib.auth.models import AbstractUser, Group, Permission
+import uuid
 from django.db import models
 from django.utils import timezone
+from django.contrib.auth.models import AbstractUser, Group, Permission
+from django.core.validators import MinValueValidator, MaxValueValidator
 from phonenumber_field.modelfields import PhoneNumberField
-import uuid
+from cloudinary.models import CloudinaryField
 
 # Create your models here.
 
@@ -151,3 +153,40 @@ class VerificationRequest(models.Model):
     
     def __str__(self):
         return f"Verification for {self.user.email} - {self.status}"
+
+
+# users/models.py (add to existing imports)
+
+class ProviderProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='provider_profile',
+        limit_choices_to={'role': 'provider'}  # optional: restrict to providers
+    )
+    
+    # Business details
+    business_logo = CloudinaryField('image', blank=True, null=True, folder='provider_logos/')
+    business_description = models.TextField(max_length=2000, blank=True)
+    years_in_business = models.PositiveIntegerField(blank=True, null=True)
+    website = models.URLField(blank=True, max_length=200)
+    
+    # Social links (stored as JSON)
+    social_links = models.JSONField(default=dict, blank=True)
+    
+    # Service categories (many-to-many if we have categories, or simple text field for now)
+    # We'll implement categories later; for MVP, use a text field or tags.
+    services_offered = models.CharField(max_length=500, blank=True, help_text="Comma-separated service categories")
+    
+    # Stats (calculated, can be updated via signals or periodic tasks)
+    average_rating = models.FloatField(default=0.0, validators=[MinValueValidator(0.0), MaxValueValidator(5.0)])
+    total_reviews = models.PositiveIntegerField(default=0)
+    completed_bookings = models.PositiveIntegerField(default=0)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Provider profile for {self.user.email}"

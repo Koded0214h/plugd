@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, VerificationRequest, UserRole
+from .models import User, VerificationRequest, UserRole, ProviderProfile
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
@@ -181,3 +181,21 @@ class VerificationReviewSerializer(serializers.Serializer):
                 "rejection_reason": "Rejection reason is required when rejecting a verification."
             })
         return attrs
+
+
+class ProviderProfileSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_full_name = serializers.CharField(source='user.full_name', read_only=True)
+    user_avatar = serializers.ImageField(source='user.avatar', read_only=True)
+    
+    class Meta:
+        model = ProviderProfile
+        fields = [
+            'id', 'user', 'user_email', 'user_full_name', 'user_avatar',
+            'business_logo', 'business_description', 'years_in_business',
+            'website', 'social_links', 'services_offered',
+            'average_rating', 'total_reviews', 'completed_bookings',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'average_rating', 'total_reviews', 
+                            'completed_bookings', 'created_at', 'updated_at']

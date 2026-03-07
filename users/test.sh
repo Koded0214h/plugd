@@ -13,8 +13,8 @@ BASE_URL="http://localhost:8000"
 API_URL="${BASE_URL}/api/users"
 
 # Test user credentials - no phone numbers to avoid validation issues
-TEST_EMAIL="test.customer@example.com"
-TEST_USERNAME="testcustomer"
+TEST_EMAIL="test.customer1@example.com"
+TEST_USERNAME="testcustomer1"
 TEST_PASSWORD="TestPass123!"
 TEST_FIRST_NAME="Test"
 TEST_LAST_NAME="Customer"
@@ -29,7 +29,7 @@ HUB_USERNAME="testhub"
 HUB_PASSWORD="TestPass123!"
 HUB_BUSINESS="Test Hub Agency"
 
-ADMIN_EMAIL="admin@example.com"
+ADMIN_EMAIL="admin1@example.com"
 ADMIN_PASSWORD="admin123"
 
 # Store tokens
@@ -39,6 +39,9 @@ CUSTOMER_TOKEN=""
 PROVIDER_TOKEN=""
 HUB_TOKEN=""
 ADMIN_TOKEN=""
+
+# Global to capture last response body
+LAST_RESPONSE_BODY=""
 
 # Temporary files
 HEADERS_FILE=$(mktemp)
@@ -112,6 +115,7 @@ call_api() {
     
     # Read response body
     local response_body=$(cat "$BODY_FILE")
+    LAST_RESPONSE_BODY="$response_body"
     
     # Check if response is JSON
     if [[ "$content_type" == "application/json" ]]; then
@@ -230,7 +234,7 @@ call_api "GET" "/profile/" "" "$CUSTOMER_TOKEN" "Get authenticated user profile"
 
 # Test 5: Update Customer Profile
 print_section "5. UPDATE CUSTOMER PROFILE"
-update_profile_data=$(cat <<EOF
+update_profile_data=$(cat <<'EOF'
 {
     "first_name": "Updated",
     "last_name": "Customer",
@@ -286,8 +290,47 @@ EOF
 call_api "POST" "/auth/login/" "$provider_login_data" "" "Login with provider credentials"
 PROVIDER_TOKEN="$ACCESS_TOKEN"
 
-# Test 9: Hub Registration (no phone)
-print_section "9. HUB REGISTRATION"
+# Capture provider user ID from login response
+PROVIDER_USER_ID=""
+if [ -n "$PROVIDER_TOKEN" ] && [ "$PROVIDER_TOKEN" != "null" ]; then
+    PROVIDER_USER_ID=$(echo "$LAST_RESPONSE_BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('user', {}).get('id', ''))" 2>/dev/null)
+    if [ -n "$PROVIDER_USER_ID" ]; then
+        print_success "Provider user ID: $PROVIDER_USER_ID"
+    fi
+fi
+
+# Test 9: Get Own Provider Profile (auto-creates if not exists)
+print_section "9. GET OWN PROVIDER PROFILE"
+call_api "GET" "/provider/profile/" "" "$PROVIDER_TOKEN" "Get own provider profile"
+
+# Test 10: Update Provider Profile
+print_section "10. UPDATE PROVIDER PROFILE"
+update_provider_data=$(cat <<EOF
+{
+    "business_description": "We offer top-notch photography and videography services for all events.",
+    "years_in_business": 5,
+    "website": "https://example.com",
+    "social_links": {
+        "instagram": "@provider",
+        "facebook": "providerpage"
+    },
+    "services_offered": "Photography, Videography, Editing"
+}
+EOF
+)
+
+call_api "PATCH" "/provider/profile/" "$update_provider_data" "$PROVIDER_TOKEN" "Update provider profile"
+
+# Test 11: Get Public Provider Profile (using provider user ID)
+print_section "11. GET PUBLIC PROVIDER PROFILE"
+if [ -n "$PROVIDER_USER_ID" ]; then
+    call_api "GET" "/provider/profile/${PROVIDER_USER_ID}/" "" "" "Get public provider profile"
+else
+    print_error "Provider user ID not available, skipping public profile test"
+fi
+
+# Test 12: Hub Registration (no phone)
+print_section "12. HUB REGISTRATION"
 hub_reg_data=$(cat <<EOF
 {
     "email": "${HUB_EMAIL}",
@@ -304,9 +347,9 @@ EOF
 
 call_api "POST" "/auth/register/" "$hub_reg_data" "" "Register new hub user"
 
-# Test 10: Submit Verification Request (as Provider)
+# Test 13: Submit Verification Request (as Provider)
 if [ -n "$PROVIDER_TOKEN" ] && [ "$PROVIDER_TOKEN" != "null" ]; then
-    print_section "10. SUBMIT VERIFICATION REQUEST"
+    print_section "13. SUBMIT VERIFICATION REQUEST"
     verification_data=$(cat <<EOF
 {
     "id_number": "ID${RANDOM}",
@@ -317,13 +360,13 @@ EOF
 
     call_api "POST" "/verification/request/" "$verification_data" "$PROVIDER_TOKEN" "Submit verification request as provider"
 
-    # Test 11: Check Verification Status
-    print_section "11. CHECK VERIFICATION STATUS"
+    # Test 14: Check Verification Status
+    print_section "14. CHECK VERIFICATION STATUS"
     call_api "GET" "/verification/status/" "" "$PROVIDER_TOKEN" "Check verification status for provider"
 fi
 
-# Test 12: JWT Token Obtain
-print_section "12. JWT TOKEN OBTAIN"
+# Test 15: JWT Token Obtain
+print_section "15. JWT TOKEN OBTAIN"
 token_data=$(cat <<EOF
 {
     "email": "${TEST_EMAIL}",
@@ -334,8 +377,8 @@ EOF
 
 call_api "POST" "/auth/token/" "$token_data" "" "Obtain JWT token pair"
 
-# Test 13: Admin Login (if admin exists)
-print_section "13. ADMIN LOGIN (OPTIONAL)"
+# Test 16: Admin Login (if admin exists)
+print_section "16. ADMIN LOGIN (OPTIONAL)"
 admin_login_data=$(cat <<EOF
 {
     "email": "${ADMIN_EMAIL}",
@@ -354,8 +397,8 @@ ADMIN_TOKEN=$(echo "$admin_response" | python3 -c "import sys, json; print(json.
 if [ -n "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "None" ] && [ "$ADMIN_TOKEN" != "" ]; then
     print_success "Admin login successful"
     
-    # Test 14: Get Verification Queue (Admin only)
-    print_section "14. GET VERIFICATION QUEUE (ADMIN)"
+    # Test 17: Get Verification Queue (Admin only)
+    print_section "17. GET VERIFICATION QUEUE (ADMIN)"
     call_api "GET" "/admin/verification/queue/" "" "$ADMIN_TOKEN" "Get pending verification requests"
     
     # Get first pending request ID if any
@@ -365,8 +408,8 @@ if [ -n "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "None" ] && [ "$ADMIN_TOKEN" != 
     request_id=$(echo "$queue_response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data[0]['id'] if data and len(data)>0 else '')" 2>/dev/null)
     
     if [ -n "$request_id" ] && [ "$request_id" != "" ]; then
-        # Test 15: Review Verification (Admin only)
-        print_section "15. REVIEW VERIFICATION (ADMIN)"
+        # Test 18: Review Verification (Admin only)
+        print_section "18. REVIEW VERIFICATION (ADMIN)"
         review_data=$(cat <<EOF
 {
     "status": "verified",
@@ -386,8 +429,8 @@ else
     echo -e "  Password: ${ADMIN_PASSWORD}"
 fi
 
-# Test 16: Change Password
-print_section "16. CHANGE PASSWORD"
+# Test 19: Change Password
+print_section "19. CHANGE PASSWORD"
 change_password_data=$(cat <<EOF
 {
     "old_password": "${TEST_PASSWORD}",
@@ -399,8 +442,8 @@ EOF
 
 call_api "POST" "/profile/change-password/" "$change_password_data" "$CUSTOMER_TOKEN" "Change customer password"
 
-# Test 17: Login with New Password
-print_section "17. LOGIN WITH NEW PASSWORD"
+# Test 20: Login with New Password
+print_section "20. LOGIN WITH NEW PASSWORD"
 new_login_data=$(cat <<EOF
 {
     "email": "${TEST_EMAIL}",
@@ -411,8 +454,8 @@ EOF
 
 call_api "POST" "/auth/login/" "$new_login_data" "" "Login with new password"
 
-# Test 18: Logout
-print_section "18. LOGOUT"
+# Test 21: Logout
+print_section "21. LOGOUT"
 logout_data=$(cat <<EOF
 {
     "refresh": "${REFRESH_TOKEN}"
@@ -422,8 +465,8 @@ EOF
 
 call_api "POST" "/auth/logout/" "$logout_data" "$ACCESS_TOKEN" "Logout user"
 
-# Test 19: Try to access profile after logout (should fail)
-print_section "19. ACCESS PROFILE AFTER LOGOUT (EXPECTED TO FAIL)"
+# Test 22: Try to access profile after logout (should fail)
+print_section "22. ACCESS PROFILE AFTER LOGOUT (EXPECTED TO FAIL)"
 call_api "GET" "/profile/" "" "$ACCESS_TOKEN" "Try to access profile with old token"
 
 # Summary
@@ -431,6 +474,7 @@ print_section "TEST SUMMARY"
 echo -e "${GREEN}✅ Server Health Check${NC}"
 echo -e "${GREEN}✅ Customer Registration & Authentication${NC}"
 echo -e "${GREEN}✅ Provider Registration & Authentication${NC}"
+echo -e "${GREEN}✅ Provider Profile (Own & Public)${NC}"
 echo -e "${GREEN}✅ Hub Registration & Authentication${NC}"
 echo -e "${GREEN}✅ Profile Management${NC}"
 echo -e "${GREEN}✅ JWT Token Operations${NC}"

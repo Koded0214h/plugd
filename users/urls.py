@@ -21,4 +21,8 @@ urlpatterns = [
     # Admin
     path('admin/verification/queue/', views.AdminVerificationQueueView.as_view(), name='admin_verification_queue'),
     path('admin/verification/review/<uuid:request_id>/', views.AdminVerificationReviewView.as_view(), name='admin_verification_review'),
+
+    # Provider Endpoint
+    path('provider/profile/', views.ProviderOwnProfileView.as_view(), name='provider-profile-own'),
+    path('provider/profile/<uuid:user_id>/', views.PublicProviderProfileView.as_view(), name='provider-profile-public'),
 ]
