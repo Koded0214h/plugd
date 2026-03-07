@@ -51,9 +51,11 @@ INSTALLED_APPS = [
     'phonenumber_field', 
     'cloudinary_storage',
     'cloudinary', 
+    'django_filters',
 
     # Local apps
     'users', 
+    'core',
 ]
 
 AUTH_USER_MODEL = 'users.User'
@@ -152,6 +154,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),

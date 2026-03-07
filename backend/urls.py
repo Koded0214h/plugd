@@ -28,7 +28,7 @@ urlpatterns = [
 
     path('', health_check, name='health-check'),  
 
-    
+
     path('admin/', admin.site.urls),
     
     # API Schema
@@ -41,6 +41,8 @@ urlpatterns = [
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
     path('api/users/', include('users.urls')),
+
+    path('api/core/', include('core.urls')),
 
 ]
 # Serve media files in development
