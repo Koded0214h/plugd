@@ -18,6 +18,8 @@ jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 phonenumbers==9.0.25
 pillow==12.1.1
+psycopg==3.3.3
+psycopg2==2.9.11
 PyJWT==2.11.0
 python-dotenv==1.2.1
 PyYAML==6.0.3
@@ -26,6 +28,7 @@ requests==2.32.5
 rpds-py==0.30.0
 six==1.17.0
 sqlparse==0.5.5
+stripe==14.4.1
 typing_extensions==4.15.0
 uritemplate==4.2.0
 urllib3==2.6.3

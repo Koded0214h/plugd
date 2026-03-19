@@ -11,8 +11,10 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import stripe
 import dj_database_url
 from pathlib import Path
+from decimal import Decimal
 from datetime import timedelta
 from dotenv import load_dotenv
 
@@ -56,6 +58,7 @@ INSTALLED_APPS = [
     # Local apps
     'users', 
     'core',
+    'bookings'
 ]
 
 AUTH_USER_MODEL = 'users.User'
@@ -227,3 +230,9 @@ CLOUDINARY_STORAGE = {
 }
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')  # for webhook verification
+PLATFORM_FEE_PERCENTAGE = Decimal('10.0')

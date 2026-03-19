@@ -1,0 +1,5 @@
+> Create a Stripe webhook secret key on stripe and use the Backend deployed URL
+
+> Share the .env file with Trinity
+
+> The webhook secret should be separate in both development and production
