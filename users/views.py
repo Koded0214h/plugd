@@ -1,3 +1,4 @@
+import stripe
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -5,6 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import logout
+from django.conf import settings
 from django.utils import timezone
 from .models import User, VerificationRequest, ProviderProfile
 from .serializers import (
@@ -13,6 +15,10 @@ from .serializers import (
     ChangePasswordSerializer, VerificationRequestSerializer,
     VerificationReviewSerializer, ProviderProfileSerializer
 )
+
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
 
 class RegisterView(generics.CreateAPIView):
     """User registration view"""
@@ -220,3 +226,90 @@ class PublicProviderProfileView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
     lookup_field = 'user_id'   # we'll use user UUID to fetch
     lookup_url_kwarg = 'user_id'
+
+
+class CreateStripeConnectAccountView(APIView):
+    """
+    Creates a Stripe Connect account for the provider and returns an onboarding link.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.role != 'provider':
+            return Response({'error': 'Only providers can create Stripe accounts.'}, status=403)
+
+        # If user already has a stripe account id and onboarding is complete, return dashboard link
+        if user.stripe_account_id and user.stripe_onboarding_complete:
+            # Generate a link to the Stripe Express dashboard
+            account_link = stripe.AccountLink.create(
+                account=user.stripe_account_id,
+                refresh_url=f"{settings.YOUR_DOMAIN}/api/users/stripe/refresh/",
+                return_url=f"{settings.YOUR_DOMAIN}/api/users/stripe/return/",
+                type='account_onboarding',
+            )
+            return Response({'url': account_link.url})
+
+        # Create a new Stripe account (Express type for easier onboarding)
+        try:
+            account = stripe.Account.create(
+                type='express',
+                country='US',  # adjust based on your market
+                email=user.email,
+                capabilities={
+                    'card_payments': {'requested': True},
+                    'transfers': {'requested': True},
+                },
+                business_type='individual',  # or 'company'
+                individual={
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'email': user.email,
+                },
+                metadata={'user_id': str(user.id)}
+            )
+        except stripe.error.StripeError as e:
+            return Response({'error': str(e)}, status=400)
+
+        # Save the account ID
+        user.stripe_account_id = account.id
+        user.stripe_onboarding_complete = False
+        user.save()
+
+        # Create an account link for onboarding
+        account_link = stripe.AccountLink.create(
+            account=account.id,
+            refresh_url=f"{settings.YOUR_DOMAIN}/api/users/stripe/refresh/",
+            return_url=f"{settings.YOUR_DOMAIN}/api/users/stripe/return/",
+            type='account_onboarding',
+        )
+
+        return Response({'url': account_link.url})
+
+
+class StripeOnboardingRefreshView(APIView):
+    """If the user exits onboarding, they come here to get a new link."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Redirect to the account creation view again (which will generate a new link)
+        return Response({'message': 'Redirect to create account endpoint'})
+
+
+class StripeOnboardingReturnView(APIView):
+    """After onboarding completes, Stripe redirects here."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        # Check if onboarding was actually completed
+        if user.stripe_account_id:
+            try:
+                account = stripe.Account.retrieve(user.stripe_account_id)
+                if account.charges_enabled and account.payouts_enabled:
+                    user.stripe_onboarding_complete = True
+                    user.save()
+                    return Response({'message': 'Onboarding complete!'})
+            except stripe.error.StripeError:
+                pass
+        return Response({'error': 'Onboarding incomplete'}, status=400)

@@ -23,6 +23,10 @@ urlpatterns = [
     path('admin/verification/review/<uuid:request_id>/', views.AdminVerificationReviewView.as_view(), name='admin_verification_review'),
 
     # Provider Endpoint
-    path('provider/profile/', views.ProviderOwnProfileView.as_view(), name='provider-profile-own'),
-    path('provider/profile/<uuid:user_id>/', views.PublicProviderProfileView.as_view(), name='provider-profile-public'),
+    path('provider/profile/', views.ProviderOwnProfileView.as_view(), name='provider-profile-own'), 
+    path('provider/profile/<uuid:user_id>/', views.PublicProviderProfileView.as_view(), name='provider-profile-public'),    
+
+    path('stripe/create-account/', views.CreateStripeConnectAccountView.as_view(), name='stripe-create-account'),
+    path('stripe/refresh/', views.StripeOnboardingRefreshView.as_view(), name='stripe-refresh'),
+    path('stripe/return/', views.StripeOnboardingReturnView.as_view(), name='stripe-return'),
 ]

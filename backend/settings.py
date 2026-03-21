@@ -232,7 +232,10 @@ CLOUDINARY_STORAGE = {
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 
+# Stripe Keys
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')  # for webhook verification
-PLATFORM_FEE_PERCENTAGE = Decimal('10.0')
+PLATFORM_FEE_PERCENTAGE = Decimal('9.0')
+STRIPE_CONNECT_CLIENT_ID = os.getenv('STRIPE_CONNECT_CLIENT_ID')
+YOUR_DOMAIN = os.getenv('YOUR_DOMAIN', 'http://localhost:8000')

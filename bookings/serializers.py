@@ -1,3 +1,4 @@
+import stripe
 from rest_framework import serializers
 from .models import Availability, Booking
 from decimal import Decimal
@@ -68,28 +69,55 @@ class BookingCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         listing = validated_data['listing']
-        availability = validated_data['availability']
         provider = listing.provider
         customer = self.context['request'].user
 
-        # Calculate amounts (assuming fixed price for now)
+        # Check if provider has completed Stripe onboarding
+        if not provider.stripe_account_id or not provider.stripe_onboarding_complete:
+            raise serializers.ValidationError("Provider is not ready to receive payments.")
+
+        # Calculate amounts
         total = listing.price
         platform_fee = total * (Decimal(settings.PLATFORM_FEE_PERCENTAGE) / 100)
         provider_amount = total - platform_fee
 
+        # Create booking (without payment intent yet)
         booking = Booking.objects.create(
             listing=listing,
             customer=customer,
             provider=provider,
-            availability=availability,
-            date=availability.date,
-            start_time=availability.start_time,
-            end_time=availability.end_time,
+            availability=validated_data['availability'],
+            date=validated_data['date'],
+            start_time=validated_data['start_time'],
+            end_time=validated_data['end_time'],
             total_amount=total,
             platform_fee=platform_fee,
             provider_amount=provider_amount,
             status='pending'
         )
+
+        # Create Stripe PaymentIntent with Connect
+        try:
+            intent = stripe.PaymentIntent.create(
+                amount=int(total * 100),  # in cents
+                currency=listing.currency.lower(),
+                application_fee_amount=int(platform_fee * 100),  # platform fee in cents
+                transfer_data={
+                    'destination': provider.stripe_account_id,  # send rest to provider
+                },
+                metadata={
+                    'booking_id': str(booking.id),
+                    'customer_id': str(customer.id),
+                    'provider_id': str(provider.id)
+                }
+            )
+            booking.stripe_payment_intent_id = intent.id
+            booking.stripe_client_secret = intent.client_secret
+            booking.save()
+        except stripe.error.StripeError as e:
+            booking.delete()
+            raise serializers.ValidationError(f"Stripe error: {str(e)}")
+
         return booking
 
 
