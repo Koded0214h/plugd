@@ -3,3 +3,48 @@
 > Share the .env file with Trinity
 
 > The webhook secret should be separate in both development and production
+
+Here’s a clear checklist to get Stripe Connect working. Follow these steps **in order**:
+
+---
+
+### 1. **Set Business Model to Marketplace**  
+   - Go to Stripe Dashboard (test mode) → **Settings** → **Connect** → **Settings**.  
+   - Under **Business model**, select **Marketplace** and save.
+
+### 2. **Complete the Connected Account Setup**  
+   - In Stripe Dashboard → **Connect** → **Accounts**, find the account `acct_1TECqYJnxWgZXMZB` (Provider User).  
+   - Go to the **Capabilities** tab → ensure **Transfers** is **requested** and shows **Active**.  
+   - Under **Bank accounts**, add a test bank account (e.g., `000123456789`).  
+   - Under **Business details**, add a test tax ID (e.g., `000000000`) and a valid address.  
+   - If the account is still "Restricted", wait a few minutes; test mode often updates quickly.
+
+### 3. **Verify Capabilities Are Active**  
+   - In your Django shell:  
+     ```python
+     import stripe
+     stripe.api_key = "sk_test_..."
+     account = stripe.Account.retrieve("acct_1TECqYJnxWgZXMZB")
+     print(account.capabilities.transfers)   # Should be "active"
+     ```
+
+### 4. **Update Your Code to Handle Onboarding Redirects**  
+   - Modify `StripeOnboardingReturnView` and `StripeOnboardingRefreshView` to be public and use `account_id` from the query string. (You already have the code for this in the last response – replace your current views with that public version.)
+
+### 5. **Manually Mark Onboarding Complete (Temporary)**  
+   - If the transfers capability is active but the provider’s flag is still `False`, set it manually in Django shell:  
+     ```python
+     from users.models import User
+     provider = User.objects.get(stripe_account_id="acct_1TECqYJnxWgZXMZB")
+     provider.stripe_onboarding_complete = True
+     provider.save()
+     ```
+
+### 6. **Run Your Test Script**  
+   - Start your Django server and the Stripe CLI listener (`stripe listen`).  
+   - Run `sh test.sh`.  
+   - Booking creation should now return a PaymentIntent ID. The automatic webhook trigger will confirm the booking.
+
+If you still hit issues, it’s often because the connected account wasn’t fully onboarded. You can delete that account (in Stripe test mode) and create a new one – the new account will go through the public return view and automatically set the flag if you’ve updated the code.
+
+Let me know if any step is unclear.

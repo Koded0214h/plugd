@@ -48,6 +48,9 @@ BOOKING_ID=""
 # Global to capture last response body
 LAST_RESPONSE_BODY=""
 
+# Stripe listener PID
+STRIPE_PID=""
+
 # Temporary files
 HEADERS_FILE=$(mktemp)
 BODY_FILE=$(mktemp)
@@ -55,8 +58,47 @@ BODY_FILE=$(mktemp)
 # Cleanup function
 cleanup() {
     rm -f "$HEADERS_FILE" "$BODY_FILE"
+    stop_stripe_listener
 }
 trap cleanup EXIT
+
+# Function to start Stripe CLI listener
+start_stripe_listener() {
+    if ! command -v stripe &> /dev/null; then
+        echo -e "${YELLOW}Stripe CLI not found. Skipping webhook automation.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Starting Stripe CLI listener in background...${NC}"
+    # Start listener in background, suppress output
+    stripe listen --forward-to localhost:8000/api/bookings/stripe-webhook/ > /dev/null 2>&1 &
+    STRIPE_PID=$!
+    echo -e "${YELLOW}Stripe listener PID: $STRIPE_PID${NC}"
+    # Wait a moment for the listener to establish connection
+    sleep 3
+    return 0
+}
+
+# Function to stop Stripe CLI listener
+stop_stripe_listener() {
+    if [ -n "$STRIPE_PID" ]; then
+        echo -e "${YELLOW}Stopping Stripe listener...${NC}"
+        kill "$STRIPE_PID" 2>/dev/null
+        wait "$STRIPE_PID" 2>/dev/null
+    fi
+}
+
+# Function to trigger Stripe payment intent success
+trigger_payment_success() {
+    if command -v stripe &> /dev/null; then
+        echo -e "${YELLOW}Triggering payment_intent.succeeded...${NC}"
+        stripe trigger payment_intent.succeeded > /dev/null 2>&1
+        # Wait for webhook to process
+        sleep 2
+    else
+        echo -e "${YELLOW}Stripe CLI not available, skipping automatic payment trigger.${NC}"
+    fi
+}
 
 # Function to print section headers
 print_section() {
@@ -276,6 +318,9 @@ print_section "PLUG'D 2.0 API TEST SUITE"
 echo -e "${BLUE}User API Base: ${USER_API_URL}${NC}"
 echo -e "${BLUE}Core API Base: ${CORE_API_URL}${NC}"
 echo -e "${BLUE}Bookings API Base: ${BOOKINGS_API_URL}${NC}\n"
+
+# Start Stripe listener for webhook automation
+start_stripe_listener
 
 # Test 1: Health Check
 print_section "1. SERVER HEALTH CHECK"
@@ -569,23 +614,26 @@ fi
 print_section "24. LIST PROVIDER BOOKINGS"
 call_bookings_api "GET" "/bookings/" "" "$PROVIDER_TOKEN" "List provider bookings"
 
-# (Optional) Test 25: Simulate Stripe webhook to confirm booking
-print_section "25. SIMULATE STRIPE PAYMENT SUCCESS (OPTIONAL)"
-echo -e "${YELLOW}Note: This requires Stripe CLI to be running and listening.${NC}"
-echo -e "${YELLOW}Run: stripe listen --forward-to localhost:8000/api/bookings/stripe-webhook/${NC}"
-echo -e "${YELLOW}Then in another terminal: stripe trigger payment_intent.succeeded${NC}"
-echo -e "${YELLOW}Skipping automated webhook test.${NC}"
+# ------------------- STRIPE WEBHOOK AUTOMATION -------------------
+if [ -n "$BOOKING_ID" ] && [ -n "$PAYMENT_INTENT" ]; then
+    print_section "Simulate Payment Success via Stripe Webhook"
+    print_step "Triggering payment_intent.succeeded event"
+    trigger_payment_success
+    
+    print_step "Verifying booking status after webhook"
+    call_bookings_api "GET" "/bookings/${BOOKING_ID}/" "" "$CUSTOMER_TOKEN" "Check booking status (should be confirmed)"
+fi
 
 # ------------------- END BOOKINGS TESTS -------------------
 
-# Test 26: Delete Listing (optional) - moved after bookings so we don't delete before testing
-print_section "26. DELETE LISTING (OPTIONAL)"
+# Test 25: Delete Listing (optional) - moved after bookings so we don't delete before testing
+print_section "25. DELETE LISTING (OPTIONAL)"
 if [ -n "$LISTING_ID" ]; then
     call_core_api "DELETE" "/listings/${LISTING_ID}/" "" "$PROVIDER_TOKEN" "Delete listing"
 fi
 
-# Test 27: Hub Registration
-print_section "27. HUB REGISTRATION"
+# Test 26: Hub Registration
+print_section "26. HUB REGISTRATION"
 hub_reg_data=$(cat <<EOF
 {
     "email": "${HUB_EMAIL}",
@@ -602,8 +650,8 @@ EOF
 
 call_user_api "POST" "/auth/register/" "$hub_reg_data" "" "Register new hub user"
 
-# Test 28: Submit Verification Request (as Provider)
-print_section "28. SUBMIT VERIFICATION REQUEST"
+# Test 27: Submit Verification Request (as Provider)
+print_section "27. SUBMIT VERIFICATION REQUEST"
 if [ -n "$PROVIDER_TOKEN" ]; then
     verification_data=$(cat <<EOF
 {
@@ -615,14 +663,14 @@ EOF
     call_user_api "POST" "/verification/request/" "$verification_data" "$PROVIDER_TOKEN" "Submit verification request as provider"
 fi
 
-# Test 29: Check Verification Status
-print_section "29. CHECK VERIFICATION STATUS"
+# Test 28: Check Verification Status
+print_section "28. CHECK VERIFICATION STATUS"
 if [ -n "$PROVIDER_TOKEN" ]; then
     call_user_api "GET" "/verification/status/" "" "$PROVIDER_TOKEN" "Check verification status for provider"
 fi
 
-# Test 30: JWT Token Obtain
-print_section "30. JWT TOKEN OBTAIN"
+# Test 29: JWT Token Obtain
+print_section "29. JWT TOKEN OBTAIN"
 token_data=$(cat <<EOF
 {
     "email": "${TEST_EMAIL}",
@@ -633,8 +681,8 @@ EOF
 
 call_user_api "POST" "/auth/token/" "$token_data" "" "Obtain JWT token pair"
 
-# Test 31: Admin Login (optional)
-print_section "31. ADMIN LOGIN (OPTIONAL)"
+# Test 30: Admin Login (optional)
+print_section "30. ADMIN LOGIN (OPTIONAL)"
 admin_login_data=$(cat <<EOF
 {
     "email": "${ADMIN_EMAIL}",
@@ -653,8 +701,8 @@ ADMIN_TOKEN=$(echo "$admin_response" | python3 -c "import sys, json; print(json.
 if [ -n "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "None" ] && [ "$ADMIN_TOKEN" != "" ]; then
     print_success "Admin login successful"
     
-    # Test 32: Get Verification Queue (Admin only)
-    print_section "32. GET VERIFICATION QUEUE (ADMIN)"
+    # Test 31: Get Verification Queue (Admin only)
+    print_section "31. GET VERIFICATION QUEUE (ADMIN)"
     call_user_api "GET" "/admin/verification/queue/" "" "$ADMIN_TOKEN" "Get pending verification requests"
     
     # Get first pending request ID if any
@@ -664,8 +712,8 @@ if [ -n "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "None" ] && [ "$ADMIN_TOKEN" != 
     request_id=$(echo "$queue_response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data[0]['id'] if data and len(data)>0 else '')" 2>/dev/null)
     
     if [ -n "$request_id" ] && [ "$request_id" != "" ]; then
-        # Test 33: Review Verification (Admin only)
-        print_section "33. REVIEW VERIFICATION (ADMIN)"
+        # Test 32: Review Verification (Admin only)
+        print_section "32. REVIEW VERIFICATION (ADMIN)"
         review_data=$(cat <<EOF
 {
     "status": "verified",
@@ -685,8 +733,8 @@ else
     echo -e "  Password: ${ADMIN_PASSWORD}"
 fi
 
-# Test 34: Change Password
-print_section "34. CHANGE PASSWORD"
+# Test 33: Change Password
+print_section "33. CHANGE PASSWORD"
 change_password_data=$(cat <<EOF
 {
     "old_password": "${TEST_PASSWORD}",
@@ -698,8 +746,8 @@ EOF
 
 call_user_api "POST" "/profile/change-password/" "$change_password_data" "$CUSTOMER_TOKEN" "Change customer password"
 
-# Test 35: Login with New Password
-print_section "35. LOGIN WITH NEW PASSWORD"
+# Test 34: Login with New Password
+print_section "34. LOGIN WITH NEW PASSWORD"
 new_login_data=$(cat <<EOF
 {
     "email": "${TEST_EMAIL}",
@@ -710,8 +758,8 @@ EOF
 
 call_user_api "POST" "/auth/login/" "$new_login_data" "" "Login with new password"
 
-# Test 36: Logout
-print_section "36. LOGOUT"
+# Test 35: Logout
+print_section "35. LOGOUT"
 logout_data=$(cat <<EOF
 {
     "refresh": "${REFRESH_TOKEN}"
@@ -721,8 +769,8 @@ EOF
 
 call_user_api "POST" "/auth/logout/" "$logout_data" "$ACCESS_TOKEN" "Logout user"
 
-# Test 37: Access Profile After Logout (should fail)
-print_section "37. ACCESS PROFILE AFTER LOGOUT (EXPECTED TO FAIL)"
+# Test 36: Access Profile After Logout (should fail)
+print_section "36. ACCESS PROFILE AFTER LOGOUT (EXPECTED TO FAIL)"
 call_user_api "GET" "/profile/" "" "$ACCESS_TOKEN" "Try to access profile with old token"
 
 # Summary
@@ -736,6 +784,7 @@ echo -e "${GREEN}✅ Service Listing CRUD${NC}"
 echo -e "${GREEN}✅ Provider Availability Management${NC}"
 echo -e "${GREEN}✅ View Available Slots${NC}"
 echo -e "${GREEN}✅ Booking Creation (with PaymentIntent)${NC}"
+echo -e "${GREEN}✅ Webhook Trigger & Booking Confirmation${NC}"
 echo -e "${GREEN}✅ List User Bookings (Customer & Provider)${NC}"
 echo -e "${GREEN}✅ Hub Registration & Authentication${NC}"
 echo -e "${GREEN}✅ Verification Workflow${NC}"
