@@ -8,10 +8,6 @@ Here’s a clear checklist to get Stripe Connect working. Follow these steps **i
 
 ---
 
-### 1. **Set Business Model to Marketplace**  
-   - Go to Stripe Dashboard (test mode) → **Settings** → **Connect** → **Settings**.  
-   - Under **Business model**, select **Marketplace** and save.
-
 ### 2. **Complete the Connected Account Setup**  
    - In Stripe Dashboard → **Connect** → **Accounts**, find the account `acct_1TECqYJnxWgZXMZB` (Provider User).  
    - Go to the **Capabilities** tab → ensure **Transfers** is **requested** and shows **Active**.  
