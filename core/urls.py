@@ -25,4 +25,8 @@ urlpatterns = [
     # Review views
     path('reviews/create/', views.CustomerReviewCreateView.as_view(), name='review-create'),
     path('provider/reviews/', views.ProviderReviewListView.as_view(), name='provider-review-list'),
+
+    # Admin Platform Settings
+    path('admin/settings/', views.AdminPlatformSettingView.as_view(), name='admin-platform-setting-list'),
+    path('admin/settings/<str:key>/', views.AdminPlatformSettingView.as_view(), name='admin-platform-setting-detail'),
 ]

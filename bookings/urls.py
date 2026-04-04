@@ -13,12 +13,15 @@ urlpatterns = [
     path('bookings/', views.UserBookingListView.as_view(), name='user-bookings'),
     path('bookings/create/', views.BookingCreateView.as_view(), name='booking-create'),
     path('bookings/<uuid:pk>/', views.BookingDetailView.as_view(), name='booking-detail'),
+    path('bookings/<uuid:pk>/approve/', views.BookingApproveView.as_view(), name='booking-approve'),
+    path('bookings/<uuid:pk>/reject/', views.BookingRejectView.as_view(), name='booking-reject'),
 
     # Stripe webhook
     path('stripe-webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
     path('payouts/', views.ProviderPayoutRequestView.as_view(), name='provider-payout-request'),
     path('payouts/balance/', views.ProviderBalanceView.as_view(), name='provider-balance'),
     path('admin/payouts/', views.AdminPayoutListView.as_view(), name='admin-payout-list'),
+    path('admin/payouts/queue/', views.AdminPayoutQueueView.as_view(), name='admin-payout-queue'),
     path('admin/revenue/', views.AdminPlatformRevenueView.as_view(), name='admin-platform-revenue'),
     path('admin/transactions/', views.AdminTransactionListView.as_view(), name='admin-transaction-list'),
 

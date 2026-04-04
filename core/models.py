@@ -34,6 +34,11 @@ class ServiceListing(models.Model):
         ('daily', 'Daily Rate'),
     ]
 
+    BOOKING_APPROVAL_TYPES = [
+        ('instant', 'Instant Book'),
+        ('manual', 'Manual Approval'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provider = models.ForeignKey(
         User, 
@@ -54,6 +59,7 @@ class ServiceListing(models.Model):
     pricing_type = models.CharField(max_length=10, choices=PRICING_TYPES, default='fixed')
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     currency = models.CharField(max_length=3, default='USD')
+    booking_approval_type = models.CharField(max_length=10, choices=BOOKING_APPROVAL_TYPES, default='instant')
     
     # Location (could be text or coordinates – simple for now)
     location = models.CharField(max_length=255, blank=True)
@@ -245,3 +251,29 @@ class Quote(models.Model):
 
     def __str__(self):
         return f"Quote from {self.provider.email} for {self.service_request.title}"
+
+
+class PlatformSetting(models.Model):
+    """Global platform settings managed by admin."""
+    key = models.CharField(max_length=100, unique=True, help_text="Unique setting key (e.g., commission_rate)")
+    value = models.TextField(help_text="Value of the setting (e.g., '0.09' for commission_rate)")
+    description = models.TextField(blank=True, help_text="Description of the setting")
+    data_type = models.CharField(max_length=50, default='string', help_text="Expected data type (e.g., 'string', 'integer', 'decimal', 'boolean')")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, limit_choices_to={'role': 'admin'})
+
+    class Meta:
+        verbose_name = "Platform Setting"
+        verbose_name_plural = "Platform Settings"
+
+    def __str__(self):
+        return f"{self.key}: {self.value}"
+
+    def get_value(self):
+        if self.data_type == 'integer':
+            return int(self.value)
+        elif self.data_type == 'decimal':
+            return Decimal(self.value)
+        elif self.data_type == 'boolean':
+            return self.value.lower() == 'true'
+        return self.value

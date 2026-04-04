@@ -47,6 +47,8 @@ urlpatterns = [
     path('api/bookings/', include('bookings.urls')),
 
     path('api/messaging/', include('messaging.urls')),
+
+    path('api/coupons/', include('coupons.urls')),
 ]
 # Serve media files in development
 if settings.DEBUG:

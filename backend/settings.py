@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'core',
     'bookings',
     'messaging',
+    'coupons',
 ]
 
 AUTH_USER_MODEL = 'users.User'

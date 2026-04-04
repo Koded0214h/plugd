@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import ServiceCategory, ServiceListing, ServiceImage, ServiceRequest, Quote, Review
+from .models import ServiceCategory, ServiceListing, ServiceImage, ServiceRequest, Quote, Review, PlatformSetting
+from users.serializers import UserSummarySerializer
 
 class ServiceCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,6 +28,7 @@ class ServiceListingSerializer(serializers.ModelSerializer):
             'id', 'provider', 'provider_email', 'provider_name', 'provider_avatar',
             'category', 'category_name', 'title', 'description',
             'pricing_type', 'price', 'currency', 'location', 'is_remote_available',
+            'booking_approval_type',
             'featured_image', 'is_active', 'views_count', 'created_at', 'updated_at',
             'images'
         ]
@@ -40,6 +42,7 @@ class ServiceListingCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'category', 'title', 'description',
             'pricing_type', 'price', 'currency', 'location', 'is_remote_available',
+            'booking_approval_type',
             'featured_image', 'is_active'
         ]
 
@@ -154,3 +157,12 @@ class ReviewSerializer(serializers.ModelSerializer):
             provider.provider_profile.save()
         
         return review
+
+
+class PlatformSettingSerializer(serializers.ModelSerializer):
+    updated_by_details = UserSummarySerializer(source='updated_by', read_only=True)
+
+    class Meta:
+        model = PlatformSetting
+        fields = ['id', 'key', 'value', 'description', 'data_type', 'updated_at', 'updated_by', 'updated_by_details']
+        read_only_fields = ['id', 'updated_at', 'updated_by', 'updated_by_details']

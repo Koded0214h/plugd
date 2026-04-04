@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db.models import Sum, F   
 from users.serializers import UserSummarySerializer
 from .models import Availability, Booking, Transaction, PayoutRequest, HubProject, ProjectMember, ProjectPackage
+from coupons.models import Coupon, UserCouponUsage
 
 class AvailabilitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,15 +25,17 @@ class AvailabilitySerializer(serializers.ModelSerializer):
         return data
 
 
+# bookings/serializers.py (add/modify the following)
 class BookingCreateSerializer(serializers.ModelSerializer):
     availability = serializers.PrimaryKeyRelatedField(queryset=Availability.objects.all())
     date = serializers.DateField(required=False)
     start_time = serializers.TimeField(required=False)
     end_time = serializers.TimeField(required=False)
+    coupon_code = serializers.CharField(required=False, write_only=True)
 
     class Meta:
         model = Booking
-        fields = ['listing', 'availability', 'date', 'start_time', 'end_time']
+        fields = ['listing', 'availability', 'date', 'start_time', 'end_time', 'coupon_code']
 
     def validate(self, data):
         listing = data['listing']
@@ -43,8 +46,16 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         if not availability:
             raise serializers.ValidationError("Availability is required.")
 
+        # Check if slot is already booked
         if availability.is_booked:
             raise serializers.ValidationError("This time slot is already booked.")
+
+        # Check if slot is reserved (locked) by another checkout
+        if availability.reserved_until and availability.reserved_until > timezone.now():
+            raise serializers.ValidationError(
+                "This time slot is currently being processed by another customer. Please try again in a few minutes."
+            )
+
         if availability.provider != listing.provider:
             raise serializers.ValidationError("Availability does not belong to this listing's provider.")
 
@@ -63,23 +74,64 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         if conflicting:
             raise serializers.ValidationError("This time slot is already booked.")
 
+        # --- Coupon handling ---
+        coupon_code = data.get('coupon_code')
+        if coupon_code:
+            try:
+                coupon = Coupon.objects.get(code=coupon_code, is_active=True)
+            except Coupon.DoesNotExist:
+                raise serializers.ValidationError("Invalid coupon code.")
+            if not coupon.is_valid:
+                raise serializers.ValidationError("This coupon is no longer valid.")
+
+            user = self.context['request'].user
+            user_usage = UserCouponUsage.objects.filter(user=user, coupon=coupon).count()
+            if user_usage >= coupon.per_user_limit:
+                raise serializers.ValidationError(
+                    "You have already used this coupon the maximum number of times."
+                )
+
+            # Check if coupon applies to this listing
+            if coupon.applicable_listings.exists() and not coupon.applicable_listings.filter(id=listing.id).exists():
+                raise serializers.ValidationError("This coupon is not applicable to this service.")
+
+            # Check minimum order amount
+            total = listing.price
+            if coupon.min_order_amount and total < coupon.min_order_amount:
+                raise serializers.ValidationError(
+                    f"Minimum order amount of {coupon.min_order_amount} required for this coupon."
+                )
+
+            # Calculate discounted total
+            discounted_total = coupon.apply_discount(total)
+            data['discounted_total'] = discounted_total
+            data['coupon'] = coupon
+        else:
+            data['discounted_total'] = listing.price
+            data['coupon'] = None
+
         return data
 
     def create(self, validated_data):
         listing = validated_data['listing']
         provider = listing.provider
         customer = self.context['request'].user
+        coupon = validated_data.get('coupon')
+        discounted_total = validated_data['discounted_total']
 
-        # Check if provider has completed Stripe onboarding
-        if not provider.stripe_account_id or not provider.stripe_onboarding_complete:
-            raise serializers.ValidationError("Provider is not ready to receive payments.")
+        # Check if provider has completed Stripe onboarding (only needed for instant bookings)
+        if listing.booking_approval_type == 'instant':
+            if not provider.stripe_account_id or not provider.stripe_onboarding_complete:
+                raise serializers.ValidationError("Provider is not ready to receive payments.")
 
-        # Calculate amounts
-        total = listing.price
-        platform_fee = total * (Decimal(settings.PLATFORM_FEE_PERCENTAGE) / 100)
-        provider_amount = total - platform_fee
+        # Calculate amounts using discounted total
+        platform_fee = discounted_total * (Decimal(settings.PLATFORM_FEE_PERCENTAGE) / 100)
+        provider_amount = discounted_total - platform_fee
 
-        # Create booking (without payment intent yet)
+        # Determine initial status
+        initial_status = 'pending_approval' if listing.booking_approval_type == 'manual' else 'pending'
+
+        # Create booking
         booking = Booking.objects.create(
             listing=listing,
             customer=customer,
@@ -88,35 +140,50 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             date=validated_data['date'],
             start_time=validated_data['start_time'],
             end_time=validated_data['end_time'],
-            total_amount=total,
+            total_amount=discounted_total,
             platform_fee=platform_fee,
             provider_amount=provider_amount,
-            status='pending'
+            status=initial_status
         )
 
-        # Create Stripe PaymentIntent with Connect
-        try:
-            intent = stripe.PaymentIntent.create(
-                amount=int(total * 100),  # in cents
-                currency=listing.currency.lower(),
-                application_fee_amount=int(platform_fee * 100),  # platform fee in cents
-                transfer_data={
-                    'destination': provider.stripe_account_id,  # send rest to provider
-                },
-                metadata={
+        # Reserve the slot for 15 minutes
+        availability = validated_data['availability']
+        availability.reserved_until = timezone.now() + timezone.timedelta(minutes=15)
+        availability.save(update_fields=['reserved_until'])
+
+        # Record coupon usage
+        if coupon:
+            UserCouponUsage.objects.create(user=customer, coupon=coupon, booking=booking)
+            coupon.used_count += 1
+            coupon.save(update_fields=['used_count'])
+
+        # Create Stripe PaymentIntent only for instant bookings
+        if listing.booking_approval_type == 'instant':
+            try:
+                metadata = {
                     'booking_id': str(booking.id),
                     'customer_id': str(customer.id),
-                    'provider_id': str(provider.id)
+                    'provider_id': str(provider.id),
                 }
-            )
-            booking.stripe_payment_intent_id = intent.id
-            booking.stripe_client_secret = intent.client_secret
-            booking.save()
-        except stripe.error.StripeError as e:
-            booking.delete()
-            raise serializers.ValidationError(f"Stripe error: {str(e)}")
+                if coupon:
+                    metadata['coupon_code'] = coupon.code
+
+                intent = stripe.PaymentIntent.create(
+                    amount=int(discounted_total * 100),
+                    currency=listing.currency.lower(),
+                    application_fee_amount=int(platform_fee * 100),
+                    transfer_data={'destination': provider.stripe_account_id},
+                    metadata=metadata
+                )
+                booking.stripe_payment_intent_id = intent.id
+                booking.stripe_client_secret = intent.client_secret
+                booking.save()
+            except stripe.error.StripeError as e:
+                booking.delete()
+                raise serializers.ValidationError(f"Stripe error: {str(e)}")
 
         return booking
+
 
 
 class BookingDetailSerializer(serializers.ModelSerializer):
@@ -209,4 +276,5 @@ class PlatformRevenueSerializer(serializers.Serializer):
     pending_payouts = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_bookings = serializers.IntegerField(read_only=True)
     total_transactions = serializers.IntegerField(read_only=True)
+    new_users_count = serializers.IntegerField(read_only=True)
 

@@ -144,9 +144,10 @@ class StripeWebhookView(APIView):
                 booking = Booking.objects.get(id=booking_id)
                 booking.status = 'confirmed'
                 booking.save()
-                # Mark availability as booked if it exists
+                # Mark availability as booked and clear reservation
                 if booking.availability:
                     booking.availability.is_booked = True
+                    booking.availability.reserved_until = None
                     booking.availability.save()
                 # Create transaction record
                 Transaction.objects.create(
@@ -157,7 +158,7 @@ class StripeWebhookView(APIView):
                     provider_amount=booking.provider_amount
                 )
             except Booking.DoesNotExist:
-                pass # Booking not found, ignore
+                pass
 
         elif event['type'] == 'payment_intent.payment_failed':
             payment_intent = event['data']['object']
@@ -166,8 +167,12 @@ class StripeWebhookView(APIView):
                 booking = Booking.objects.get(id=booking_id)
                 booking.status = 'cancelled'
                 booking.save()
+                # Release the slot reservation
+                if booking.availability:
+                    booking.availability.reserved_until = None
+                    booking.availability.save()
             except Booking.DoesNotExist:
-                pass # Booking not found, ignore
+                pass
 
         return Response(status=200)
 
@@ -309,6 +314,15 @@ class AdminPayoutListView(generics.ListAPIView):
         return PayoutRequest.objects.all().order_by('-created_at')
 
 
+class AdminPayoutQueueView(generics.ListAPIView):
+    """Admin view for pending payout requests (payout queue)."""
+    serializer_class = PayoutRequestSerializer
+    permission_classes = [permissions.IsAdminUser] # Only admins can access this
+
+    def get_queryset(self):
+        return PayoutRequest.objects.filter(status__in=['pending', 'processing']).order_by('-created_at')
+
+
 class AdminPlatformRevenueView(APIView):
     """Admin view for platform revenue overview."""
     permission_classes = [permissions.IsAdminUser]
@@ -332,6 +346,9 @@ class AdminPlatformRevenueView(APIView):
         # Total bookings and transactions
         total_bookings = Booking.objects.count()
         total_transactions = Transaction.objects.count()
+        # New users (e.g., in the last 30 days)
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+        new_users_count = User.objects.filter(created_at__gte=thirty_days_ago).count()
 
         data = {
             'total_platform_earnings': total_platform_earnings,
@@ -340,6 +357,7 @@ class AdminPlatformRevenueView(APIView):
             'pending_payouts': pending_payouts,
             'total_bookings': total_bookings,
             'total_transactions': total_transactions,
+            'new_users_count': new_users_count,
         }
         serializer = PlatformRevenueSerializer(data=data)
         serializer.is_valid(raise_exception=True) # Validate the data against the serializer
@@ -494,3 +512,72 @@ class ProjectMemberAvailabilityCreateView(generics.CreateAPIView):
             return Response({"error": "Only Hubs can create availabilities for project members."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer.save(provider=project_member.provider, project_member=project_member)
+
+
+
+class BookingApproveView(APIView):
+    """Provider approves a pending_approval booking, creates PaymentIntent."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.get(pk=pk, status='pending_approval')
+        except Booking.DoesNotExist:
+            return Response({'error': 'Booking not found or not awaiting approval.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only the assigned provider can approve
+        if booking.provider != request.user:
+            raise PermissionDenied("You are not the provider for this booking.")
+
+        # Release the slot reservation (already set in create)
+        # Create PaymentIntent
+        try:
+            intent = stripe.PaymentIntent.create(
+                amount=int(booking.total_amount * 100),
+                currency=booking.listing.currency.lower(),
+                application_fee_amount=int(booking.platform_fee * 100),
+                transfer_data={'destination': booking.provider.stripe_account_id},
+                metadata={
+                    'booking_id': str(booking.id),
+                    'customer_id': str(booking.customer.id),
+                    'provider_id': str(booking.provider.id)
+                }
+            )
+            booking.stripe_payment_intent_id = intent.id
+            booking.stripe_client_secret = intent.client_secret
+            booking.status = 'pending'  # Now awaiting payment
+            booking.save()
+
+            # The slot remains reserved until payment succeeds or fails
+            return Response({
+                'message': 'Booking approved. Payment required to confirm.',
+                'stripe_client_secret': intent.client_secret,
+                'booking_id': str(booking.id)
+            }, status=status.HTTP_200_OK)
+        except stripe.error.StripeError as e:
+            return Response({'error': f"Stripe error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BookingRejectView(APIView):
+    """Provider rejects a pending_approval booking."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.get(pk=pk, status='pending_approval')
+        except Booking.DoesNotExist:
+            return Response({'error': 'Booking not found or not awaiting approval.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if booking.provider != request.user:
+            raise PermissionDenied("You are not the provider for this booking.")
+
+        # Cancel the booking and release the slot
+        booking.status = 'cancelled'
+        booking.save()
+
+        # Release the reservation on the availability slot
+        if booking.availability:
+            booking.availability.reserved_until = None
+            booking.availability.save(update_fields=['reserved_until'])
+
+        return Response({'message': 'Booking rejected and cancelled.'}, status=status.HTTP_200_OK)

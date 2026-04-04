@@ -9,14 +9,15 @@ from django.conf import settings
 from datetime import datetime, timedelta
 import stripe
 
-from .models import ServiceCategory, ServiceListing, ServiceImage, ServiceRequest, Quote, Review
+from .models import ServiceCategory, ServiceListing, ServiceImage, ServiceRequest, Quote, Review, PlatformSetting # Add PlatformSetting
 from .serializers import (
     ServiceListingSerializer, 
     ServiceListingCreateUpdateSerializer,
     ServiceCategorySerializer,
     ServiceRequestSerializer,
     QuoteSerializer,
-    ReviewSerializer # Import ReviewSerializer
+    ReviewSerializer, # Import ReviewSerializer
+    PlatformSettingSerializer # Add PlatformSettingSerializer
 )
 from bookings.models import Booking # Import Booking model for review validation
 # Assume Stripe API key is configured in settings.py
@@ -417,3 +418,20 @@ class ProviderReviewListView(generics.ListAPIView):
         if user.role == 'provider':
             return Review.objects.filter(provider=user).order_by('-created_at')
         return Review.objects.none()
+
+
+class AdminPlatformSettingView(generics.ListAPIView, generics.RetrieveUpdateAPIView):
+    """Admin view for managing platform settings (e.g., commission rate)."""
+    queryset = PlatformSetting.objects.all()
+    serializer_class = PlatformSettingSerializer
+    permission_classes = [permissions.IsAdminUser] # Only admins can access this
+    lookup_field = 'key' # Use 'key' field for retrieval
+
+    def get_object(self):
+        # For RetrieveUpdateAPIView, get_object is called with self.kwargs['lookup_field']
+        # We need to make sure the user has permission to update the object
+        obj = super().get_object()
+        return obj
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user) # Track who updated the setting
