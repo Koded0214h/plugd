@@ -2,13 +2,14 @@ import stripe
 from django.conf import settings
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from rest_framework import serializers
-from django.utils import timezone
-from bookings.models import Transaction
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from .models import Availability, Booking
-from .serializers import AvailabilitySerializer, BookingCreateSerializer, BookingDetailSerializer
+from django.db.models import Sum, F
+from django.utils import timezone
+
+from bookings.models import Availability, Booking, Transaction, PayoutRequest
+from bookings.serializers import AvailabilitySerializer, BookingCreateSerializer, BookingDetailSerializer, TransactionSerializer, PayoutRequestSerializer
+from users.models import User # Import User model for role checks
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -134,7 +135,7 @@ class StripeWebhookView(APIView):
                 booking = Booking.objects.get(id=booking_id)
                 booking.status = 'confirmed'
                 booking.save()
-                # Mark availability as booked
+                # Mark availability as booked if it exists
                 if booking.availability:
                     booking.availability.is_booked = True
                     booking.availability.save()
@@ -147,7 +148,7 @@ class StripeWebhookView(APIView):
                     provider_amount=booking.provider_amount
                 )
             except Booking.DoesNotExist:
-                pass
+                pass # Booking not found, ignore
 
         elif event['type'] == 'payment_intent.payment_failed':
             payment_intent = event['data']['object']
@@ -157,6 +158,139 @@ class StripeWebhookView(APIView):
                 booking.status = 'cancelled'
                 booking.save()
             except Booking.DoesNotExist:
-                pass
+                pass # Booking not found, ignore
 
         return Response(status=200)
+
+# Payouts
+class ProviderPayoutRequestView(generics.ListCreateAPIView):
+    """
+    Allows providers to view their payout history and request a new payout.
+    """
+    serializer_class = PayoutRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'provider':
+            return PayoutRequest.objects.filter(provider=user)
+        return PayoutRequest.objects.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role != 'provider':
+            raise PermissionDenied("Only providers can request payouts.")
+
+        # Check if provider has completed Stripe onboarding
+        if not user.stripe_account_id or not user.stripe_onboarding_complete:
+            raise PermissionDenied("Stripe onboarding must be completed before requesting payouts.")
+
+        requested_amount = serializer.validated_data.get('amount')
+        
+        if not requested_amount or requested_amount <= 0:
+            raise serializers.ValidationError("Payout amount must be positive.")
+        
+        # --- Balance Check (Placeholder) ---
+        # In a real system, this would check against an actual available balance.
+        # This requires summing up 'provider_amount' from completed bookings not yet paid out.
+        # For this example, we'll assume the requested amount is valid if positive.
+        # A minimum payout amount might also be enforced.
+        # --- End Placeholder ---
+
+        serializer.save(provider=user, amount=requested_amount, status='pending')
+        # NOTE: Stripe transfer creation is not automated by this request view.
+        # It creates a pending request that can be reviewed/processed by admins or a separate background job.
+        # For a fully automated system, Stripe Transfer API call would happen here.
+
+
+class AdminPayoutListView(generics.ListAPIView):
+    """Admin view for all payout requests."""
+    serializer_class = PayoutRequestSerializer
+    permission_classes = [permissions.IsAdminUser] # Only admins can access this
+
+    def get_queryset(self):
+            return PayoutRequest.objects.all().order_by('-created_at')
+
+# --- Payout Request Logic ---
+class ProviderPayoutRequestView(generics.ListCreateAPIView):
+    """
+    Allows providers to view their payout history and request a new payout.
+    Also initiates Stripe transfer upon successful request.
+    """
+    serializer_class = PayoutRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'provider':
+            return PayoutRequest.objects.filter(provider=user)
+        return PayoutRequest.objects.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role != 'provider':
+            raise PermissionDenied("Only providers can request payouts.")
+
+        # Check if provider has completed Stripe onboarding
+        if not user.stripe_account_id or not user.stripe_onboarding_complete:
+            raise PermissionDenied("Stripe onboarding must be completed before requesting payouts.")
+
+        requested_amount = serializer.validated_data.get('amount')
+        
+        if not requested_amount or requested_amount <= 0:
+            raise serializers.ValidationError("Payout amount must be positive.")
+        
+        # Calculate available balance for the provider
+        available_balance = user.available_balance
+
+        if requested_amount > available_balance:
+            raise serializers.ValidationError(f"Requested amount exceeds available balance (${available_balance}).")
+
+        # Create PayoutRequest record
+        payout_request = serializer.save(provider=user, amount=requested_amount, status='processing') # Start as processing
+        
+        # Initiate Stripe Transfer
+        try:
+            transfer = stripe.Transfer.create(
+                amount=int(requested_amount * 100),  # Amount in cents
+                currency=user.stripe_account_id.split('_')[-1].lower() if user.stripe_account_id else 'usd', # Infer currency, fallback to USD
+                destination=user.stripe_account_id,
+                metadata={
+                    'payout_request_id': str(payout_request.id),
+                    'provider_id': str(user.id)
+                }
+            )
+            payout_request.stripe_transfer_id = transfer.id
+            payout_request.status = 'processing' # Explicitly set to processing after Stripe call
+            payout_request.save()
+            
+            # Return success response
+            return Response({
+                'message': 'Payout request submitted successfully and Stripe transfer initiated.',
+                'payout_request': PayoutRequestSerializer(payout_request).data
+            }, status=status.HTTP_201_CREATED)
+
+        except stripe.error.StripeError as e:
+            # If Stripe transfer fails, mark payout request as failed
+            payout_request.status = 'failed'
+            payout_request.save(update_fields=['status'])
+            return Response({'error': f"Stripe transfer failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Handle other potential errors
+            payout_request.status = 'failed'
+            payout_request.save(update_fields=['status'])
+            return Response({'error': f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminPayoutListView(generics.ListAPIView):
+    """Admin view for all payout requests."""
+    serializer_class = PayoutRequestSerializer
+    permission_classes = [permissions.IsAdminUser] # Only admins can access this
+
+    def get_queryset(self):
+        return PayoutRequest.objects.all().order_by('-created_at')
+
+# Placeholder for future Hub functionality views
+# class HubProjectListView(generics.ListCreateAPIView): ...
+# class HubProjectDetailView(generics.RetrieveUpdateDestroyAPIView): ...
+

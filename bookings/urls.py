@@ -16,4 +16,6 @@ urlpatterns = [
 
     # Stripe webhook
     path('stripe-webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
+    path('payouts/', views.ProviderPayoutRequestView.as_view(), name='provider-payout-request'),
+    path('admin/payouts/', views.AdminPayoutListView.as_view(), name='admin-payout-list'),
 ]

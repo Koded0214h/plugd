@@ -118,6 +118,35 @@ class User(AbstractUser):
         self.verification_reviewed_at = timezone.now()
         self.save()
 
+    @property
+    def available_balance(self):
+        """Calculates the available balance for providers."""
+        if self.role != UserRole.PROVIDER:
+            return Decimal('0.00')
+
+        # Sum of provider_amount from confirmed bookings that have transactions
+        confirmed_earnings = Booking.objects.filter(
+            provider=self,
+            status='confirmed',
+            transaction__isnull=False # Ensure a transaction exists for this booking
+        ).aggregate(
+            total_earned=Sum(F('provider_amount'))
+        )['total_earned'] or Decimal('0.00')
+
+        # Subtract amounts that have already been paid out
+        # This requires a way to link payouts to specific earnings or bookings.
+        # For now, we'll subtract the total amount from completed payout requests.
+        # A more accurate system would track which booking amounts have been paid.
+        paid_out_amount = PayoutRequest.objects.filter(
+            provider=self,
+            status='completed'
+        ).aggregate(
+            total_paid_out=Sum('amount')
+        )['total_paid_out'] or Decimal('0.00')
+        
+        available = confirmed_earnings - paid_out_amount
+        return available.quantize(Decimal('0.01')) # Ensure two decimal places
+
 
 class VerificationRequest(models.Model):
     """Track verification requests for admin queue"""

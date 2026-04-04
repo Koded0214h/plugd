@@ -1,9 +1,10 @@
 import stripe
 from rest_framework import serializers
-from .models import Availability, Booking
+from .models import Availability, Booking, Transaction, PayoutRequest
 from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
+from django.db.models import Sum, F
 
 class AvailabilitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -20,11 +21,6 @@ class AvailabilitySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Date cannot be in the past.")
         return data
 
-
-from rest_framework import serializers
-from .models import Availability, Booking
-from django.utils import timezone
-from django.conf import settings
 
 class BookingCreateSerializer(serializers.ModelSerializer):
     availability = serializers.PrimaryKeyRelatedField(queryset=Availability.objects.all())
@@ -135,3 +131,33 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'stripe_payment_intent_id', 'status', 'created_at'
         ]
         read_only_fields = ['id', 'stripe_payment_intent_id', 'status', 'created_at']
+
+class TransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transaction
+        fields = ['id', 'booking', 'stripe_transaction_id', 'amount', 'platform_fee', 'provider_amount', 'status', 'created_at']
+        read_only_fields = ['id', 'booking', 'stripe_transaction_id', 'amount', 'platform_fee', 'provider_amount', 'status', 'created_at']
+
+class PayoutRequestSerializer(serializers.ModelSerializer):
+    provider_email = serializers.ReadOnlyField(source='provider.email')
+    provider_name = serializers.ReadOnlyField(source='provider.full_name')
+    
+    class Meta:
+        model = PayoutRequest
+        fields = [
+            'id', 'provider', 'provider_email', 'provider_name', 'amount', 
+            'status', 'stripe_transfer_id', 'created_at', 'processed_at'
+        ]
+        read_only_fields = ['id', 'provider', 'status', 'stripe_transfer_id', 'created_at', 'processed_at']
+
+    def validate(self, data):
+        # Ensure amount is positive
+        if data.get('amount') and data['amount'] <= 0:
+            raise serializers.ValidationError("Payout amount must be positive.")
+        
+        # Check if provider has sufficient balance (this logic would typically be in the view/service)
+        # For serializer, we mainly validate data integrity. Balance check is more of a business logic.
+        return data
+
+    # This serializer is primarily for reading/displaying payout requests.
+    # Creation and modification logic will be handled in the views.
