@@ -10,7 +10,7 @@ from django.conf import settings
 from django.utils import timezone
 from .models import User, VerificationRequest, ProviderProfile
 from .serializers import (
-    UserRegistrationSerializer, UserLoginSerializer,
+    UserRegistrationSerializer, AdminRegistrationSerializer, UserLoginSerializer,
     CustomTokenObtainPairSerializer, UserProfileSerializer,
     ChangePasswordSerializer, VerificationRequestSerializer,
     VerificationReviewSerializer, ProviderProfileSerializer
@@ -21,7 +21,7 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class RegisterView(generics.CreateAPIView):
-    """User registration view"""
+    """User registration view (Customers, Providers, Hubs)"""
     serializer_class = UserRegistrationSerializer
     permission_classes = [permissions.AllowAny]
     
@@ -38,6 +38,27 @@ class RegisterView(generics.CreateAPIView):
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'message': 'User created successfully'
+        }, status=status.HTTP_201_CREATED)
+
+
+class AdminRegisterView(generics.CreateAPIView):
+    """Dedicated Admin registration view"""
+    serializer_class = AdminRegistrationSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'user': UserProfileSerializer(user).data,
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'message': 'Admin user created successfully'
         }, status=status.HTTP_201_CREATED)
 
 
@@ -63,6 +84,35 @@ class LoginView(APIView):
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'message': 'Login successful'
+        })
+
+
+class AdminLoginView(APIView):
+    """Dedicated Admin login view"""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        serializer = UserLoginSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        
+        # Enforce admin role check for this endpoint
+        if user.role != 'admin':
+            raise PermissionDenied("This login is reserved for admins.")
+        
+        # Update last active
+        user.last_active = timezone.now()
+        user.is_online = True
+        user.save(update_fields=['last_active', 'is_online'])
+        
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'user': UserProfileSerializer(user).data,
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'message': 'Admin login successful'
         })
 
 

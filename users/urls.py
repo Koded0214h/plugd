@@ -6,6 +6,8 @@ urlpatterns = [
     # Authentication
     path('auth/register/', views.RegisterView.as_view(), name='auth_register'),
     path('auth/login/', views.LoginView.as_view(), name='auth_login'),
+    path('auth/admin/register/', views.AdminRegisterView.as_view(), name='auth_admin_register'),
+    path('auth/admin/login/', views.AdminLoginView.as_view(), name='auth_admin_login'),
     path('auth/logout/', views.LogoutView.as_view(), name='auth_logout'),
     path('auth/token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
@@ -30,3 +32,5 @@ urlpatterns = [
     path('stripe/refresh/', views.StripeOnboardingRefreshView.as_view(), name='stripe-refresh'),
     path('stripe/return/', views.StripeOnboardingReturnView.as_view(), name='stripe-return'),
 ]
+
+

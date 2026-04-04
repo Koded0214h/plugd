@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, VerificationRequest, UserRole, ProviderProfile
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for user registration"""
+    """Serializer for user registration (Customers, Providers, Hubs)"""
     password = serializers.CharField(
         write_only=True,
         required=True,
@@ -34,8 +34,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
                 "password": "Password fields didn't match."
             })
         
-        # Business name required for providers and hubs
+        # Prevent admin role selection via this serializer
         role = attrs.get('role')
+        if role == UserRole.ADMIN:
+            raise serializers.ValidationError({
+                "role": "Admin role cannot be selected via this endpoint."
+            })
+
+        # Business name required for providers and hubs
         if role in [UserRole.PROVIDER, UserRole.HUB] and not attrs.get('business_name'):
             raise serializers.ValidationError({
                 "business_name": "Business name is required for providers and hubs."
@@ -52,6 +58,48 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             password=password,
             **validated_data
         )
+        
+        return user
+
+
+class AdminRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for admin registration"""
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password]
+    )
+    password2 = serializers.CharField(write_only=True, required=True)
+    
+    class Meta:
+        model = User
+        fields = [
+            'email', 'username', 'password', 'password2',
+            'first_name', 'last_name', 'phone_number'
+        ]
+    
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({
+                "password": "Password fields didn't match."
+            })
+        return attrs
+    
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        password = validated_data.pop('password')
+        
+        # Create admin user
+        user = User.objects.create_user(
+            password=password,
+            role=UserRole.ADMIN,
+            is_staff=True,  # Give access to Django admin
+            **validated_data
+        )
+        
+        # Automatically mark as verified in custom logic too
+        user.verification_status = 'verified'
+        user.save()
         
         return user
 
