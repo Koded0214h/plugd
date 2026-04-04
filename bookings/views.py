@@ -1,15 +1,24 @@
+from decimal import Decimal
+from rest_framework.exceptions import PermissionDenied
 import stripe
 from django.conf import settings
 from rest_framework import generics, permissions, status
+from rest_framework import serializers 
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, F
 from django.utils import timezone
 
-from bookings.models import Availability, Booking, Transaction, PayoutRequest
-from bookings.serializers import AvailabilitySerializer, BookingCreateSerializer, BookingDetailSerializer, TransactionSerializer, PayoutRequestSerializer
+from bookings.models import Availability, Booking, Transaction, PayoutRequest, HubProject, ProjectMember, ProjectPackage
+from bookings.serializers import (
+    AvailabilitySerializer, BookingCreateSerializer, BookingDetailSerializer, 
+    TransactionSerializer, PayoutRequestSerializer,
+    HubProjectSerializer, ProjectMemberSerializer, ProjectPackageSerializer,
+    PlatformRevenueSerializer # Add PlatformRevenueSerializer
+)
 from users.models import User # Import User model for role checks
+from users.serializers import ProviderBalanceSerializer, UserProfileSerializer # Add UserProfileSerializer
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -265,10 +274,9 @@ class ProviderPayoutRequestView(generics.ListCreateAPIView):
             payout_request.save()
             
             # Return success response
-            return Response({
-                'message': 'Payout request submitted successfully and Stripe transfer initiated.',
-                'payout_request': PayoutRequestSerializer(payout_request).data
-            }, status=status.HTTP_201_CREATED)
+            return Response({'message': 'Payout request submitted successfully and Stripe transfer initiated.',
+                    'payout_request': PayoutRequestSerializer(payout_request).data
+                }, status=status.HTTP_201_CREATED)
 
         except stripe.error.StripeError as e:
             # If Stripe transfer fails, mark payout request as failed
@@ -282,6 +290,16 @@ class ProviderPayoutRequestView(generics.ListCreateAPIView):
             return Response({'error': f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class ProviderBalanceView(generics.RetrieveAPIView):
+    serializer_class = ProviderBalanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        if self.request.user.role != 'provider':
+            raise PermissionDenied("Only providers can view their balance.")
+        return self.request.user
+
+
 class AdminPayoutListView(generics.ListAPIView):
     """Admin view for all payout requests."""
     serializer_class = PayoutRequestSerializer
@@ -290,7 +308,189 @@ class AdminPayoutListView(generics.ListAPIView):
     def get_queryset(self):
         return PayoutRequest.objects.all().order_by('-created_at')
 
-# Placeholder for future Hub functionality views
-# class HubProjectListView(generics.ListCreateAPIView): ...
-# class HubProjectDetailView(generics.RetrieveUpdateDestroyAPIView): ...
 
+class AdminPlatformRevenueView(APIView):
+    """Admin view for platform revenue overview."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, format=None):
+        # Total platform earnings (sum of platform_fee from all transactions)
+        total_platform_earnings = Transaction.objects.aggregate(
+            total=Sum('platform_fee'))['total'] or Decimal('0.00')
+
+        # Total payouts (sum of amount from completed payout requests)
+        total_payouts = PayoutRequest.objects.filter(status='completed').aggregate(
+            total=Sum('amount'))['total'] or Decimal('0.00')
+        
+        # Net revenue
+        net_revenue = total_platform_earnings - total_payouts
+
+        # Pending payouts
+        pending_payouts = PayoutRequest.objects.filter(status__in=['pending', 'processing']).aggregate(
+            total=Sum('amount'))['total'] or Decimal('0.00')
+
+        # Total bookings and transactions
+        total_bookings = Booking.objects.count()
+        total_transactions = Transaction.objects.count()
+
+        data = {
+            'total_platform_earnings': total_platform_earnings,
+            'total_payouts': total_payouts,
+            'net_revenue': net_revenue,
+            'pending_payouts': pending_payouts,
+            'total_bookings': total_bookings,
+            'total_transactions': total_transactions,
+        }
+        serializer = PlatformRevenueSerializer(data=data)
+        serializer.is_valid(raise_exception=True) # Validate the data against the serializer
+        return Response(serializer.data)
+
+
+class AdminTransactionListView(generics.ListAPIView):
+    """Admin view for all transactions for monitoring and reconciliation."""
+    serializer_class = TransactionSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return Transaction.objects.all().order_by('-created_at')
+
+# Hub (Agency) functionality views
+class HubProjectListView(generics.ListCreateAPIView):
+    serializer_class = HubProjectSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role == 'hub':
+            return HubProject.objects.filter(hub=self.request.user)
+        elif self.request.user.role == 'customer':
+            return HubProject.objects.filter(customer=self.request.user)
+        return HubProject.objects.none()
+
+    def perform_create(self, serializer):
+        if self.request.user.role != 'hub':
+            return Response({"error": "Only Hubs can create projects."}, status=status.HTTP_403_FORBIDDEN)
+        serializer.save(hub=self.request.user)
+
+
+class HubProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = HubProjectSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role == 'hub':
+            return HubProject.objects.filter(hub=self.request.user)
+        elif self.request.user.role == 'customer':
+            return HubProject.objects.filter(customer=self.request.user)
+        return HubProject.objects.none()
+
+
+class ProjectInviteProviderView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, project_id):
+        if request.user.role != 'hub':
+            return Response({"error": "Only Hubs can invite providers to projects."}, status=status.HTTP_403_FORBIDDEN)
+        
+        project = get_object_or_404(HubProject, id=project_id, hub=request.user)
+        provider_id = request.data.get('provider_id')
+        
+        if not provider_id:
+            return Response({"error": "provider_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        provider = get_object_or_404(User, id=provider_id, role='provider')
+        
+        # Check if already a member
+        if ProjectMember.objects.filter(project=project, provider=provider).exists():
+            return Response({"error": "Provider is already a member of this project."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        member = ProjectMember.objects.create(project=project, provider=provider, status='invited')
+        
+        # Here we would normally send an invitation email/notification
+        
+        return Response(ProjectMemberSerializer(member).data, status=status.HTTP_201_CREATED)
+
+
+class ProjectManageMemberView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, project_id, member_id):
+        if request.user.role != 'hub':
+            return Response({"error": "Only Hubs can manage project members."}, status=status.HTTP_403_FORBIDDEN)
+        
+        project = get_object_or_404(HubProject, id=project_id, hub=request.user)
+        member = get_object_or_404(ProjectMember, id=member_id, project=project)
+        
+        member.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def patch(self, request, project_id, member_id):
+        # Allow providers to accept/reject invitations
+        member = get_object_or_404(ProjectMember, id=member_id, project_id=project_id)
+        
+        if request.user != member.provider:
+             return Response({"error": "Only the invited provider can update their status."}, status=status.HTTP_403_FORBIDDEN)
+        
+        new_status = request.data.get('status')
+        if new_status not in ['accepted', 'rejected']:
+            return Response({"error": "Invalid status. Must be 'accepted' or 'rejected'."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        member.status = new_status
+        if new_status == 'accepted':
+            member.joined_at = timezone.now()
+        member.save()
+        
+        return Response(ProjectMemberSerializer(member).data)
+
+
+class ProjectPackageCreateView(generics.CreateAPIView):
+    serializer_class = ProjectPackageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_id')
+        project = get_object_or_404(HubProject, id=project_id, hub=self.request.user)
+        
+        if self.request.user.role != 'hub':
+            # This check is actually handled by HubProject.objects.get_object_or_404(...) with hub=request.user
+            pass
+        
+        # If project already has a package, update it instead or return error
+        if hasattr(project, 'package'):
+             return Response({"error": "Project already has a package. Use update endpoint."}, status=status.HTTP_400_BAD_REQUEST)
+             
+        serializer.save(project=project)
+
+
+class ProjectAvailabilityListView(generics.ListAPIView):
+    serializer_class = AvailabilitySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_id')
+        project = get_object_or_404(HubProject, id=project_id)
+        
+        # Ensure the requesting user is either the hub, customer, or a member of the project
+        if not (self.request.user == project.hub or \
+                (project.customer and self.request.user == project.customer) or \
+                project.members.filter(provider=self.request.user).exists()):
+            return Response({"error": "You are not authorized to view this project's availabilities."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Return availabilities linked to any member of this project
+        return Availability.objects.filter(project_member__project=project).order_by('date', 'start_time')
+
+
+class ProjectMemberAvailabilityCreateView(generics.CreateAPIView):
+    serializer_class = AvailabilitySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_id')
+        member_id = self.kwargs.get('member_id')
+        
+        project = get_object_or_404(HubProject, id=project_id, hub=self.request.user) # Only hub can create
+        project_member = get_object_or_404(ProjectMember, id=member_id, project=project)
+
+        if self.request.user.role != 'hub':
+            return Response({"error": "Only Hubs can create availabilities for project members."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer.save(provider=project_member.provider, project_member=project_member)

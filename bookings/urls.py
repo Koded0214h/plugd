@@ -17,5 +17,19 @@ urlpatterns = [
     # Stripe webhook
     path('stripe-webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
     path('payouts/', views.ProviderPayoutRequestView.as_view(), name='provider-payout-request'),
+    path('payouts/balance/', views.ProviderBalanceView.as_view(), name='provider-balance'),
     path('admin/payouts/', views.AdminPayoutListView.as_view(), name='admin-payout-list'),
+    path('admin/revenue/', views.AdminPlatformRevenueView.as_view(), name='admin-platform-revenue'),
+    path('admin/transactions/', views.AdminTransactionListView.as_view(), name='admin-transaction-list'),
+
+    # Hub Projects
+    path('projects/', views.HubProjectListView.as_view(), name='hub-project-list'),
+    path('projects/<uuid:pk>/', views.HubProjectDetailView.as_view(), name='hub-project-detail'),
+    path('projects/<uuid:project_id>/invite/', views.ProjectInviteProviderView.as_view(), name='project-invite-provider'),
+    path('projects/<uuid:project_id>/members/<uuid:member_id>/', views.ProjectManageMemberView.as_view(), name='project-manage-member'),
+    path('projects/<uuid:project_id>/package/', views.ProjectPackageCreateView.as_view(), name='project-package-create'),
+
+    # Project Availabilities
+    path('projects/<uuid:project_id>/availabilities/', views.ProjectAvailabilityListView.as_view(), name='project-availability-list'),
+    path('projects/<uuid:project_id>/members/<uuid:member_id>/availabilities/', views.ProjectMemberAvailabilityCreateView.as_view(), name='project-member-availability-create'),
 ]

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Conversation, Message
+from bookings.serializers import HubProjectSerializer
 from users.serializers import UserProfileSerializer
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -11,13 +12,14 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'sender', 'created_at']
 
 class ConversationSerializer(serializers.ModelSerializer):
+    project = HubProjectSerializer(read_only=True)
     participants = UserProfileSerializer(many=True, read_only=True)
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['id', 'participants', 'last_message', 'unread_count', 'created_at', 'updated_at']
+        fields = ['id', 'project', 'participants', 'last_message', 'unread_count', 'created_at', 'updated_at']
 
     def get_last_message(self, obj):
         last_message = obj.messages.last()

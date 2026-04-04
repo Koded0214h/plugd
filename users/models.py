@@ -5,6 +5,9 @@ from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.core.validators import MinValueValidator, MaxValueValidator
 from phonenumber_field.modelfields import PhoneNumberField
 from cloudinary.models import CloudinaryField
+from decimal import Decimal
+from django.db.models import Sum, F
+from bookings.models import Booking, PayoutRequest # Import Booking and PayoutRequest models
 
 # Create your models here.
 
@@ -146,6 +149,22 @@ class User(AbstractUser):
         
         available = confirmed_earnings - paid_out_amount
         return available.quantize(Decimal('0.01')) # Ensure two decimal places
+
+    @property
+    def pending_balance(self):
+        """Calculates the pending balance for providers (from confirmed but not completed bookings)."""
+        if self.role != UserRole.PROVIDER:
+            return Decimal('0.00')
+
+        pending_earnings = Booking.objects.filter(
+            provider=self,
+            status='confirmed',
+            transaction__isnull=True # Bookings that are confirmed but haven't been completed/had a transaction yet
+        ).aggregate(
+            total_pending=Sum(F('provider_amount'))
+        )['total_pending'] or Decimal('0.00')
+        
+        return pending_earnings.quantize(Decimal('0.01')) # Ensure two decimal places
 
 
 class VerificationRequest(models.Model):

@@ -1,15 +1,17 @@
 import stripe
 from rest_framework import serializers
-from .models import Availability, Booking, Transaction, PayoutRequest
-from decimal import Decimal
-from django.conf import settings
-from django.utils import timezone
-from django.db.models import Sum, F
+from .models import Availability, Booking, Transaction, PayoutRequest                                                                                               
+from decimal import Decimal                                                                                                                                         
+from django.conf import settings                                                                                                                                    
+from django.utils import timezone                                                                                                                                   
+from django.db.models import Sum, F   
+from users.serializers import UserSummarySerializer
+from .models import Availability, Booking, Transaction, PayoutRequest, HubProject, ProjectMember, ProjectPackage
 
 class AvailabilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Availability
-        fields = ['id', 'listing', 'date', 'start_time', 'end_time', 'is_booked']
+        fields = ['id', 'listing', 'date', 'start_time', 'end_time', 'is_booked', 'project_member']
         read_only_fields = ['id', 'is_booked']
 
     def validate(self, data):
@@ -161,3 +163,50 @@ class PayoutRequestSerializer(serializers.ModelSerializer):
 
     # This serializer is primarily for reading/displaying payout requests.
     # Creation and modification logic will be handled in the views.
+
+
+class ProjectMemberSerializer(serializers.ModelSerializer):
+    provider_details = UserSummarySerializer(source='provider', read_only=True)
+    
+    class Meta:
+        model = ProjectMember
+        fields = ['id', 'project', 'provider', 'provider_details', 'status', 'invited_at', 'joined_at']
+        read_only_fields = ['id', 'project', 'status', 'invited_at', 'joined_at']
+
+
+class ProjectPackageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectPackage
+        fields = ['id', 'project', 'total_price', 'description', 'status', 'expires_at', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'project', 'created_at', 'updated_at']
+
+
+class HubProjectSerializer(serializers.ModelSerializer):
+    hub_details = UserSummarySerializer(source='hub', read_only=True)
+    customer_details = UserSummarySerializer(source='customer', read_only=True)
+    members = ProjectMemberSerializer(many=True, read_only=True)
+    package = ProjectPackageSerializer(read_only=True)
+    
+    class Meta:
+        model = HubProject
+        fields = [
+            'id', 'hub', 'hub_details', 'customer', 'customer_details',
+            'title', 'description', 'budget', 'status', 
+            'members', 'package', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'hub', 'created_at', 'updated_at']
+
+    def validate_customer(self, value):
+        if value and value.role != 'customer':
+            raise serializers.ValidationError("Only customers can be assigned to a project.")
+        return value
+
+
+class PlatformRevenueSerializer(serializers.Serializer):
+    total_platform_earnings = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_payouts = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    net_revenue = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    pending_payouts = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_bookings = serializers.IntegerField(read_only=True)
+    total_transactions = serializers.IntegerField(read_only=True)
+

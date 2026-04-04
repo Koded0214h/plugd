@@ -163,6 +163,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class UserSummarySerializer(serializers.ModelSerializer):
+    """Compact serializer for user summaries in other objects."""
+    full_name = serializers.ReadOnlyField()
+    avatar_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'full_name', 'avatar_url', 'role', 'business_name']
+        read_only_fields = fields
+
+    def get_avatar_url(self, obj):
+        if obj.avatar:
+            return obj.avatar.url
+        return None
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for user profile"""
     full_name = serializers.ReadOnlyField()
@@ -247,3 +263,13 @@ class ProviderProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'user', 'average_rating', 'total_reviews', 
                             'completed_bookings', 'created_at', 'updated_at']
+
+
+class ProviderBalanceSerializer(serializers.ModelSerializer):
+    available_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    pending_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'available_balance', 'pending_balance']
+        read_only_fields = fields
