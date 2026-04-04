@@ -46,6 +46,7 @@ urlpatterns = [
 
     path('api/bookings/', include('bookings.urls')),
 
+    path('api/messaging/', include('messaging.urls')),
 ]
 # Serve media files in development
 if settings.DEBUG:

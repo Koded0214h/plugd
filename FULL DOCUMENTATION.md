@@ -64,8 +64,20 @@ https://plugd-9u4v.onrender.com/api
 }
 ```
 
-**Use access token in header:**  
-`Authorization: Bearer <access_token>`
+---
+
+### Admin Register (Dedicated)
+**POST** `/users/auth/admin/register/`
+
+Allows creation of an admin user. Automatically sets `is_staff=True` and `verification_status="verified"`.
+*No Authentication required (Public for initial setup).*
+
+---
+
+### Admin Login (Dedicated)
+**POST** `/users/auth/admin/login/`
+
+Dedicated login for admins. Rejects any user who does not have the `admin` role.
 
 ---
 
@@ -336,6 +348,56 @@ Returns a Stripe Connect onboarding URL if not completed, or a Dashboard link if
   "rejection_reason": "Optional"
 }
 ```
+
+---
+
+## 9. Messaging & Real-time Chat
+
+### Start/Get Conversation
+**POST** `/messaging/conversations/start/`
+**Body:** `{"user_id": "other_user_uuid"}`
+*Requires Authentication.*
+Returns the `conversation_id` and existing message metadata.
+
+### List Conversations
+**GET** `/messaging/conversations/`
+*Requires Authentication.*
+Returns a list of all conversations the user is participating in, including the last message and unread count.
+
+### Message History
+**GET** `/messaging/conversations/<conversation_id>/history/`
+*Requires Authentication.*
+Returns all messages in the specified conversation.
+
+### Mark Messages as Read
+**POST** `/messaging/conversations/<conversation_id>/read/`
+*Requires Authentication.*
+Marks all messages sent by the *other* user in this conversation as read.
+
+---
+
+### Real-time WebSockets (Chat)
+**Endpoint:** `ws://localhost:8000/ws/chat/<conversation_id>/?token=<access_token>`
+
+- **Authentication**: Pass the user's JWT `access` token in the `token` query parameter.
+- **Connection**: Only participants of the conversation can connect.
+- **Sending Messages**: 
+  Send JSON: `{"message": "Your text here"}`
+- **Receiving Messages**:
+  Backend broadcasts JSON to all participants in the room:
+  ```json
+  {
+    "message": {
+      "id": "message_uuid",
+      "conversation": "...",
+      "sender": "sender_id",
+      "sender_email": "...",
+      "text": "...",
+      "is_read": false,
+      "created_at": "..."
+    }
+  }
+  ```
 
 ---
 
