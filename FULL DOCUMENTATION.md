@@ -15,7 +15,7 @@ https://plugd-9u4v.onrender.com/api
 
 ## 1. Authentication
 
-### Register
+### Register (Customer, Provider, Hub)
 **POST** `/users/auth/register/`
 
 **Request body:**
@@ -27,20 +27,12 @@ https://plugd-9u4v.onrender.com/api
   "password2": "securePass123!",
   "first_name": "John",
   "last_name": "Doe",
-  "role": "customer", // "customer", "provider", or "hub"
+  "role": "customer", // "customer", "provider", "hub"
   "business_name": "My Business" // required for provider/hub
 }
 ```
 
-**Response (201 Created):**
-```json
-{
-  "user": { ... },   // full user profile
-  "refresh": "...",
-  "access": "...",
-  "message": "User created successfully"
-}
-```
+**Response (201 Created):** returns `user` object, `access`, `refresh`.
 
 ---
 
@@ -49,213 +41,83 @@ https://plugd-9u4v.onrender.com/api
 
 **Request body:**
 ```json
-{
-  "email": "user@example.com",
-  "password": "securePass123!"
-}
+{ "email": "user@example.com", "password": "securePass123!" }
 ```
 
-**Response (200 OK):**
-```json
-{
-  "user": { ... },
-  "refresh": "...",
-  "access": "..."
-}
-```
+**Response (200 OK):** returns `user` object, `access`, `refresh`.
 
 ---
 
-### Admin Register (Dedicated)
-**POST** `/users/auth/admin/register/`
-
-Allows creation of an admin user. Automatically sets `is_staff=True` and `verification_status="verified"`.
-*No Authentication required (Public for initial setup).*
-
----
-
-### Admin Login (Dedicated)
-**POST** `/users/auth/admin/login/`
-
-Dedicated login for admins. Rejects any user who does not have the `admin` role.
+### Admin Register / Login
+**POST** `/users/auth/admin/register/` (public, creates admin)  
+**POST** `/users/auth/admin/login/` (dedicated admin login)
 
 ---
 
 ### Refresh Token
 **POST** `/users/auth/token/refresh/`
 
-**Request body:**
-```json
-{ "refresh": "..." }
-```
-
-**Response (200 OK):**
-```json
-{ "access": "..." }
-```
+**Request body:** `{ "refresh": "..." }` → `{ "access": "..." }`
 
 ---
 
 ### Logout
-**POST** `/users/auth/logout/`
-
-**Request body:** `{ "refresh": "..." }`
-*Requires Authentication.*
+**POST** `/users/auth/logout/` (requires auth, body: `{ "refresh": "..." }`)
 
 ---
 
 ## 2. User & Provider Profiles
 
-### Get/Update Own User Profile
+### Get / Update Own User Profile
 **GET** `/users/profile/`  
-**PATCH** `/users/profile/` (partial update)
+**PATCH** `/users/profile/`
 
-Contains basic user information, verification status, and Stripe onboarding status.
-*Requires Authentication.*
-
-**Response example:**
-```json
-{
-  "id": "uuid",
-  "email": "user@example.com",
-  "username": "johndoe",
-  "first_name": "John",
-  "last_name": "Doe",
-  "full_name": "John Doe",
-  "role": "customer",
-  "verification_status": "unverified",
-  "avatar": null,
-  "avatar_url": null,
-  "bio": "",
-  "location": "",
-  "business_name": "",
-  "stripe_onboarding_complete": false,
-  "last_active": "2026-03-28T12:00:00Z",
-  "is_online": true
-}
-```
-
----
+**Response:** `UserProfile` (id, email, role, verification_status, business_name, stripe_onboarding_complete, etc.)
 
 ### Change Password
 **POST** `/users/profile/change-password/`
 
-**Request body:**
-```json
-{
-  "old_password": "currentPassword123",
-  "new_password": "newSecurePass456!",
-  "new_password2": "newSecurePass456!"
-}
-```
-*Requires Authentication.*
+**Body:** `{ "old_password": "...", "new_password": "...", "new_password2": "..." }`
 
----
-
-### Get/Update Provider Business Profile
+### Provider Business Profile
 **GET** `/users/provider/profile/`  
-**PATCH** `/users/provider/profile/` (partial update)
+**PATCH** `/users/provider/profile/`
 
-Specifically for provider-only business details (logo, social links, ratings).
-*Requires Authentication (Provider/Hub only).*
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "user": "user_id",
-  "user_email": "...",
-  "user_full_name": "...",
-  "business_logo": null,
-  "business_description": "...",
-  "years_in_business": 5,
-  "website": "...",
-  "social_links": {...},
-  "services_offered": "...",
-  "average_rating": 0.0,
-  "total_reviews": 0,
-  "completed_bookings": 0
-}
-```
-
----
+**Response:** `ProviderProfile` (business_description, years_in_business, social_links, services_offered, average_rating, total_reviews, completed_bookings)
 
 ### Public Provider Profile
-**GET** `/users/provider/profile/<user_id>/`  
-*No Authentication required.*
+**GET** `/users/provider/profile/<user_id>/` (no auth)
 
 ---
 
-## 3. Categories & Listings
+## 3. Service Categories & Listings
 
 ### List Categories
-**GET** `/core/categories/`
+**GET** `/core/categories/` (public, searchable)
 
-Returns all active categories for filtering or listing creation.
-*No Authentication required.*
-
----
-
-### Create Listing (Provider only)
-**POST** `/core/listings/`
-
-```json
-{
-  "category": "category_uuid",
-  "title": "Professional Photography",
-  "description": "...",
-  "pricing_type": "hourly", // "fixed", "hourly", "daily"
-  "price": 75.00,
-  "currency": "USD",
-  "location": "Los Angeles, CA",
-  "is_remote_available": true,
-  "is_active": true
-}
-```
-*Requires Authentication (Provider only).*
-
----
-
-### List/Update/Delete Provider's Listings
-**GET** `/core/listings/` → list all of your listings  
-**GET** `/core/listings/<id>/` → retrieve one  
-**PATCH** `/core/listings/<id>/` → update  
-**DELETE** `/core/listings/<id>/` → delete  
-*Requires Authentication (Provider only).*
-
----
+### Provider Listings (CRUD)
+- **GET** `/core/listings/` – list provider’s own listings
+- **POST** `/core/listings/` – create (fields: title, description, pricing_type, price, currency, location, is_remote_available, booking_approval_type, category, featured_image, is_active)
+- **GET** `/core/listings/<id>/`
+- **PATCH** `/core/listings/<id>/`
+- **DELETE** `/core/listings/<id>/`
 
 ### Public Listings (Browse)
-**GET** `/core/public/listings/?category=...&pricing_type=...&search=...&ordering=price`  
-Returns list of active listings (paginated).
-
-**GET** `/core/public/listings/<id>/` → view a single listing (increments view count)
+- **GET** `/core/public/listings/` – filters: `category`, `pricing_type`, `is_remote_available`, `search`, `ordering`
+- **GET** `/core/public/listings/<id>/` – increments view count
 
 ---
 
 ## 4. Availability (Provider)
 
-### Create Availability
-**POST** `/bookings/availabilities/`
+### Manage Slots
+- **GET / POST** `/bookings/availabilities/` – list or create (requires auth)
+- **GET / PUT / PATCH / DELETE** `/bookings/availabilities/<id>/`
 
-```json
-{
-  "listing": "listing_id",
-  "date": "2026-03-24",
-  "start_time": "10:00:00",
-  "end_time": "12:00:00"
-}
-```
-*Requires Authentication (Provider only).*
+**Create body:** `{ "listing": "uuid", "date": "YYYY-MM-DD", "start_time": "HH:MM:SS", "end_time": "HH:MM:SS" }`
 
-### List/Update/Delete Availabilities
-**GET** `/bookings/availabilities/` → list all yours  
-**GET/PATCH/DELETE** `/bookings/availabilities/<id>/`
-
----
-
-### Get Available Slots for a Listing (Public)
-**GET** `/bookings/listings/<listing_id>/slots/` → returns list of unbooked slots
+### Public Available Slots
+**GET** `/bookings/listings/<listing_id>/slots/` – returns unbooked slots for that listing.
 
 ---
 
@@ -264,149 +126,175 @@ Returns list of active listings (paginated).
 ### Create Booking (Customer)
 **POST** `/bookings/bookings/create/`
 
-```json
-{
-  "listing": "listing_id",
-  "availability": "availability_id"
-}
-```
-*Requires Authentication.*
+**Body:** `{ "listing": "uuid", "availability": "uuid", "coupon_code": "optional" }`
 
-**Response (201):**
-```json
-{
-  "id": "booking_id",
-  "stripe_payment_intent_id": "...",
-  "stripe_client_secret": "...",
-  "status": "pending",
-  "total_amount": "85.00",
-  "platform_fee": "8.50",
-  "provider_amount": "76.50",
-  ...
-}
-```
+**Response:** Booking object with `stripe_payment_intent_id`, `stripe_client_secret`, `status` (pending / pending_approval).
 
-### List Bookings
-**GET** `/bookings/bookings/`  
-Returns list of bookings for authenticated user (customer or provider).
+### List / Retrieve Bookings
+- **GET** `/bookings/bookings/` (for authenticated user)
+- **GET** `/bookings/bookings/<id>/`
 
-### Get Single Booking
-**GET** `/bookings/bookings/<id>/`
+### Provider Approve / Reject (for manual approval bookings)
+- **POST** `/bookings/bookings/<id>/approve/` – creates PaymentIntent, status → pending
+- **POST** `/bookings/bookings/<id>/reject/` – status → cancelled
 
-### Payment Confirmation (Webhook)
-The backend handles Stripe webhooks automatically to update status to `confirmed`. Frontend should use the `stripe_client_secret` with Stripe Elements to complete the payment.
+### Stripe Webhook (backend only)
+**POST** `/bookings/stripe-webhook/` – handled by server.
 
 ---
 
-## 6. Stripe Connect Onboarding (Provider)
+## 6. Coupons & Discounts
 
-### Start Onboarding / Get Dashboard Link
-**POST** `/users/stripe/create-account/`
+### Provider Coupon CRUD
+- **GET / POST** `/coupons/provider/coupons/`
+- **GET / PUT / PATCH / DELETE** `/coupons/provider/coupons/<id>/`
 
-Returns a Stripe Connect onboarding URL if not completed, or a Dashboard link if already completed.
-*Requires Authentication (Provider only).*
+**POST body:** `{ "code": "SAVE10", "discount_type": "percentage", "discount_value": 10, "applicable_listings": [...], "usage_limit": 50, "per_user_limit": 1, "valid_until": "2026-12-31T23:59:59Z", "min_order_amount": 20, "is_active": true }`
 
-### Onboarding Flow Handlers
-- **GET** `/users/stripe/refresh/`: User is redirected here if they exit onboarding early. Returns instructions to restart.
-- **GET** `/users/stripe/return/`: User is redirected here after successful onboarding. Backend validates status and updates `stripe_onboarding_complete`.
+### Admin Coupon CRUD (global)
+- **GET / POST** `/coupons/admin/coupons/`
+- **GET / PUT / PATCH / DELETE** `/coupons/admin/coupons/<id>/`
 
----
+### Apply Coupon (Checkout)
+**POST** `/coupons/apply/` (requires auth)
 
-## 7. Verification
+**Body:** `{ "code": "SAVE10", "total_amount": 100 }`
 
-### Submit Verification (ID upload)
-**POST** `/users/verification/request/` (multipart/form-data)
+**Response:** `{ "coupon": {...}, "original_amount": "100.00", "discounted_amount": "90.00", "message": "Coupon is valid." }`
 
-- `id_number`: string
-- `document`: file (image of ID)
-- `additional_notes`: string (optional)
-
-### Check Status
-**GET** `/users/verification/status/`
-
-**Response:**
-```json
-{
-  "status": "pending", // "pending", "verified", "rejected"
-  "submitted_at": "...",
-  "rejection_reason": ""
-}
-```
+*Note: In booking creation, pass `coupon_code` directly – discount will be applied automatically.*
 
 ---
 
-## 8. Admin Only
+## 7. Service Requests & Quotes (Request & Quote System)
 
-### View Verification Queue
-**GET** `/users/admin/verification/queue/` (admin token required)
+### Service Requests (Customer)
+- **GET / POST** `/core/requests/` (customer creates, provider sees open requests)
+- **GET** `/core/requests/<id>/`
+- **PUT / PATCH** `/core/requests/<id>/update-status/` (customer can close/cancel)
 
-### Review Verification
-**POST** `/users/admin/verification/review/<request_id>/`
-```json
-{
-  "status": "verified", // or "rejected"
-  "rejection_reason": "Optional"
-}
-```
+**POST body:** `{ "title": "...", "description": "...", "category": "uuid", "budget": 500, "location": "...", "preferred_date": "2026-05-01", "preferred_time": "14:00:00", "is_remote_friendly": true }`
+
+### Quotes (Provider)
+- **GET / POST** `/core/requests/<service_request_id>/quotes/` (provider submits quote)
+- **GET** `/core/quotes/<id>/`
+- **POST** `/core/quotes/<id>/accept/` (customer accepts quote → creates booking automatically)
+- **POST** `/core/quotes/<id>/reject/` (provider rejects own quote)
+
+**Quote POST body:** `{ "description": "...", "price": 450, "estimated_duration": "3 hours", "valid_until": "2026-05-07T23:59:59Z" }`
 
 ---
 
-## 9. Messaging & Real-time Chat
+## 8. Reviews
 
-### Start/Get Conversation
-**POST** `/messaging/conversations/start/`
-**Body:** `{"user_id": "other_user_uuid"}`
-*Requires Authentication.*
-Returns the `conversation_id` and existing message metadata.
+### Customer Creates Review (for a completed booking)
+**POST** `/core/reviews/create/`
+
+**Body:** `{ "booking": "uuid", "rating": 5, "comment": "Great work!" }` (requires auth, only customer of that booking)
+
+### Provider Sees Received Reviews
+**GET** `/core/provider/reviews/` (provider only)
+
+**Response:** list of reviews with `rating`, `comment`, `customer_name`, `created_at`.
+
+---
+
+## 9. Hub Projects (Agency/Coordinator)
+
+### Hub Project CRUD
+- **GET / POST** `/bookings/projects/` (hub creates project)
+- **GET / PUT / PATCH / DELETE** `/bookings/projects/<id>/`
+
+**POST body:** `{ "title": "Smith Wedding", "description": "...", "budget": 5000, "customer": "customer_uuid" }`
+
+### Invite Provider to Project
+**POST** `/bookings/projects/<project_id>/invite/`
+
+**Body:** `{ "provider_id": "provider_uuid" }`
+
+### Manage Project Members
+- **PATCH** `/bookings/projects/<project_id>/members/<member_id>/` – provider accepts/rejects invitation (`{ "status": "accepted" }`)
+- **DELETE** `/bookings/projects/<project_id>/members/<member_id>/` – hub removes member
+
+### Create Availability for Project Member (Hub only)
+**POST** `/bookings/projects/<project_id>/members/<member_id>/availabilities/`
+
+**Body:** same as regular availability (listing not required, `project_member` set automatically)
+
+### View All Project Availabilities
+**GET** `/bookings/projects/<project_id>/availabilities/`
+
+### Create Unified Package for Customer
+**POST** `/bookings/projects/<project_id>/package/`
+
+**Body:** `{ "total_price": 4800, "description": "Package includes photography, venue, catering", "expires_at": "2026-06-01T23:59:59Z" }`
+
+---
+
+## 10. Payouts & Financials (Provider)
+
+### Request Payout & View History
+- **GET / POST** `/bookings/payouts/`
+
+**POST body:** `{ "amount": 150.00 }` – triggers Stripe transfer automatically.
+
+### View Available & Pending Balance
+**GET** `/bookings/payouts/balance/`
+
+**Response:** `{ "available_balance": "245.50", "pending_balance": "30.00" }`
+
+---
+
+## 11. Admin Financial & Payout Management
+
+### View All Payout Requests
+**GET** `/bookings/admin/payouts/`
+
+### View Pending Payout Queue
+**GET** `/bookings/admin/payouts/queue/`
+
+### Platform Revenue Overview
+**GET** `/bookings/admin/revenue/`
+
+**Response:** `{ "total_platform_earnings": "1234.56", "total_payouts": "800.00", "net_revenue": "434.56", "pending_payouts": "150.00", "total_bookings": 42, "total_transactions": 38, "new_users_count": 12 }`
+
+### All Transactions (Reconciliation)
+**GET** `/bookings/admin/transactions/`
+
+### Platform Settings (commission rate, etc.)
+- **GET / POST** `/core/admin/settings/`
+- **GET / PUT / PATCH** `/core/admin/settings/<key>/` (e.g., key = `commission_rate`)
+
+---
+
+## 12. Messaging & Real-time Chat
+
+### Start / Get Conversation
+**POST** `/messaging/conversations/start/` – `{ "user_id": "other_uuid" }`  
+**POST** `/messaging/conversations/start/project/` – `{ "project_id": "uuid" }`
 
 ### List Conversations
 **GET** `/messaging/conversations/`
-*Requires Authentication.*
-Returns a list of all conversations the user is participating in, including the last message and unread count.
 
 ### Message History
 **GET** `/messaging/conversations/<conversation_id>/history/`
-*Requires Authentication.*
-Returns all messages in the specified conversation.
 
-### Mark Messages as Read
+### Mark as Read
 **POST** `/messaging/conversations/<conversation_id>/read/`
-*Requires Authentication.*
-Marks all messages sent by the *other* user in this conversation as read.
 
----
-
-### Real-time WebSockets (Chat)
-**Endpoint:** `ws://localhost:8000/ws/chat/<conversation_id>/?token=<access_token>`
-
-- **Authentication**: Pass the user's JWT `access` token in the `token` query parameter.
-- **Connection**: Only participants of the conversation can connect.
-- **Sending Messages**: 
-  Send JSON: `{"message": "Your text here"}`
-- **Receiving Messages**:
-  Backend broadcasts JSON to all participants in the room:
-  ```json
-  {
-    "message": {
-      "id": "message_uuid",
-      "conversation": "...",
-      "sender": "sender_id",
-      "sender_email": "...",
-      "text": "...",
-      "is_read": false,
-      "created_at": "..."
-    }
-  }
-  ```
+### WebSocket Chat
+**URL:** `wss://plugd-9u4v.onrender.com/ws/chat/<conversation_id>/?token=<access_token>`  
+**Send:** `{"message": "Hello"}`  
+**Receive:** `{ "message": { "id": "...", "sender": "...", "text": "...", "created_at": "..." } }`
 
 ---
 
 ## Important Notes
-- **Authentication**: All private endpoints require `Authorization: Bearer <access_token>`.
-- **UUIDs**: Most ID fields use UUID format.
-- **Pagination**: Public listing and booking lists are paginated.
-- **Stripe**: Use test card numbers (e.g., 4242...) for payment testing in the sandbox.
+- **Authentication:** All endpoints except public ones require `Authorization: Bearer <access_token>`.
+- **UUIDs:** Use the full UUID format.
+- **Pagination:** Listing endpoints (public listings, bookings, conversations) support `page` and `page_size`.
+- **Stripe Connect:** Providers must complete Stripe onboarding before they can receive payments. Use `/users/stripe/create-account/` to get the onboarding link.
 
 ---
 
-For any questions, contact the backend team (coder0214h@gamil.com).
+For any questions, contact the backend team (coder0214h@gmail.com).
