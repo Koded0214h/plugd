@@ -304,12 +304,8 @@ class CreateStripeConnectAccountView(APIView):
         try:
             account = stripe.Account.create(
                 type='express',
-                country='US',  # adjust based on your market
+                country='GB',  # adjust based on your market
                 email=user.email,
-                capabilities={
-                    'card_payments': {'requested': True},
-                    'transfers': {'requested': True},
-                },
                 business_type='individual',  # or 'company'
                 individual={
                     'first_name': user.first_name,
