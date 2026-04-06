@@ -216,6 +216,7 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://plugd-8wkt.onrender.com'
 ]
 
 if DEBUG:
@@ -263,4 +264,9 @@ STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')  # for webhook verification
 PLATFORM_FEE_PERCENTAGE = Decimal('9.0')
 STRIPE_CONNECT_CLIENT_ID = os.getenv('STRIPE_CONNECT_CLIENT_ID')
-YOUR_DOMAIN = os.getenv('YOUR_DOMAIN', 'http://localhost:8000')
+YOUR_DOMAIN = os.getenv('YOUR_DOMAIN', 'https://plugd-8wkt.onrender.com')
+
+if DEBUG:
+    FRONTEND_URL = 'http://localhost:5173'
+else:
+    FRONTEND_URL =  'http://localhost:5173'

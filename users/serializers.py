@@ -1,275 +1,148 @@
 from rest_framework import serializers
-from django.contrib.auth import authenticate
-from django.contrib.auth.password_validation import validate_password
+from .models import User, VerificationRequest, ProviderProfile
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, VerificationRequest, UserRole, ProviderProfile
-
-class UserRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for user registration (Customers, Providers, Hubs)"""
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        validators=[validate_password]
-    )
-    password2 = serializers.CharField(write_only=True, required=True)
-    
-    class Meta:
-        model = User
-        fields = [
-            'email', 'username', 'password', 'password2',
-            'first_name', 'last_name', 'phone_number', 'role',
-            'business_name'
-        ]
-        extra_kwargs = {
-            'first_name': {'required': False},
-            'last_name': {'required': False},
-            'phone_number': {'required': False},
-            'business_name': {'required': False},
-        }
-    
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({
-                "password": "Password fields didn't match."
-            })
-        
-        # Prevent admin role selection via this serializer
-        role = attrs.get('role')
-        if role == UserRole.ADMIN:
-            raise serializers.ValidationError({
-                "role": "Admin role cannot be selected via this endpoint."
-            })
-
-        # Business name required for providers and hubs
-        if role in [UserRole.PROVIDER, UserRole.HUB] and not attrs.get('business_name'):
-            raise serializers.ValidationError({
-                "business_name": "Business name is required for providers and hubs."
-            })
-        
-        return attrs
-    
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        password = validated_data.pop('password')
-        
-        # Create user
-        user = User.objects.create_user(
-            password=password,
-            **validated_data
-        )
-        
-        return user
-
-
-class AdminRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for admin registration"""
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        validators=[validate_password]
-    )
-    password2 = serializers.CharField(write_only=True, required=True)
-    
-    class Meta:
-        model = User
-        fields = [
-            'email', 'username', 'password', 'password2',
-            'first_name', 'last_name', 'phone_number'
-        ]
-    
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({
-                "password": "Password fields didn't match."
-            })
-        return attrs
-    
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        password = validated_data.pop('password')
-        
-        # Create admin user
-        user = User.objects.create_user(
-            password=password,
-            role=UserRole.ADMIN,
-            is_staff=True,  # Give access to Django admin
-            **validated_data
-        )
-        
-        # Automatically mark as verified in custom logic too
-        user.verification_status = 'verified'
-        user.save()
-        
-        return user
-
-
-class UserLoginSerializer(serializers.Serializer):
-    """Serializer for user login"""
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
-    
-    def validate(self, data):
-        email = data.get('email')
-        password = data.get('password')
-        
-        if email and password:
-            user = authenticate(request=self.context.get('request'), 
-                              email=email, password=password)
-            
-            if not user:
-                raise serializers.ValidationError("Unable to log in with provided credentials.")
-            
-            if not user.is_active:
-                raise serializers.ValidationError("User account is disabled.")
-        else:
-            raise serializers.ValidationError("Must include 'email' and 'password'.")
-        
-        data['user'] = user
-        return data
+from django.contrib.auth.password_validation import validate_password
+from django.core.validators import validate_email
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Custom JWT serializer with additional user info"""
-    
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        
+
         # Add custom claims
         token['email'] = user.email
         token['role'] = user.role
-        token['verification_status'] = user.verification_status
-        token['full_name'] = user.full_name
-        
+        token['is_verified'] = user.is_verified
+        # ... you can add more claims here
+
         return token
-    
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        
-        # Add extra responses
-        data['user'] = {
-            'id': self.user.id,
-            'email': self.user.email,
-            'username': self.user.username,
-            'role': self.user.role,
-            'verification_status': self.user.verification_status,
-            'first_name': self.user.first_name,
-            'last_name': self.user.last_name,
-            'full_name': self.user.full_name,
-            'avatar': self.user.avatar.url if self.user.avatar else None,
-        }
-        
-        return data
 
 
-class UserSummarySerializer(serializers.ModelSerializer):
-    """Compact serializer for user summaries in other objects."""
-    full_name = serializers.ReadOnlyField()
-    avatar_url = serializers.SerializerMethodField()
-    
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True, required=True)
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'full_name', 'avatar_url', 'role', 'business_name']
-        read_only_fields = fields
+        fields = ('id', 'email', 'first_name', 'last_name', 'role', 'password', 'password2')
+        extra_kwargs = {
+            'first_name': {'required': True},
+            'last_name': {'required': True}
+        }
 
-    def get_avatar_url(self, obj):
-        if obj.avatar:
-            return obj.avatar.url
-        return None
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."}) # type: ignore
+        validate_email(attrs['email'])
+        return attrs
+
+    def create(self, validated_data):
+        user = User.objects.create(
+            email=validated_data['email'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
+            role=validated_data['role'],
+            username=validated_data['email'] # Use email as username
+        )
+        user.set_password(validated_data['password'])
+        user.save()
+        return user
+
+
+class AdminRegisterSerializer(RegisterSerializer):
+    """Admin registration serializer - allows setting is_active and is_staff"""
+    is_active = serializers.BooleanField(required=False, default=True)
+    is_staff = serializers.BooleanField(required=False, default=False)
+
+    class Meta(RegisterSerializer.Meta):
+        fields = RegisterSerializer.Meta.fields + ('is_active', 'is_staff')
+
+    def create(self, validated_data):
+        user = super().create(validated_data)
+        user.is_active = validated_data.get('is_active', True)
+        user.is_staff = validated_data.get('is_staff', False)
+        user.save()
+        return user
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """Serializer for user profile"""
-    full_name = serializers.ReadOnlyField()
-    avatar_url = serializers.SerializerMethodField()
-    
     class Meta:
         model = User
-        fields = [
-            'id', 'email', 'username', 'first_name', 'last_name', 
-            'full_name', 'phone_number', 'role', 'verification_status',
-            'avatar', 'avatar_url', 'bio', 'location', 'business_name',
-            'business_address', 'tax_id', 'stripe_onboarding_complete',
-            'email_notifications', 'sms_notifications', 'last_active',
-            'is_online', 'created_at'
-        ]
-        read_only_fields = [
-            'id', 'email', 'role', 'verification_status', 
-            'stripe_onboarding_complete', 'created_at'
-        ]
-    
-    def get_avatar_url(self, obj):
-        if obj.avatar:
-            return obj.avatar.url
-        return None
+        fields = (
+            'id', 'email', 'first_name', 'last_name', 'full_name', 'role', 
+            'phone_number', 'avatar', 'bio', 'location', 
+            'verification_status', 'is_active', 'is_online', 'last_active',
+            'created_at', 'updated_at', 'stripe_account_id', 'stripe_onboarding_complete',
+            'email_notifications', 'sms_notifications', 'business_name', 'business_address', 'tax_id'
+        )
+        read_only_fields = (
+            'id', 'email', 'role', 'verification_status', 'is_active',
+            'is_online', 'last_active', 'created_at', 'updated_at',
+            'stripe_account_id', 'stripe_onboarding_complete'
+        )
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    """Serializer for password change"""
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, validators=[validate_password])
-    new_password2 = serializers.CharField(required=True)
-    
-    def validate(self, attrs):
-        if attrs['new_password'] != attrs['new_password2']:
-            raise serializers.ValidationError({
-                "new_password": "Password fields didn't match."
-            })
-        return attrs
 
 
 class VerificationRequestSerializer(serializers.ModelSerializer):
-    """Serializer for verification requests"""
     user_email = serializers.ReadOnlyField(source='user.email')
-    user_name = serializers.ReadOnlyField(source='user.full_name')
-    
+    user_full_name = serializers.ReadOnlyField(source='user.full_name')
+
     class Meta:
         model = VerificationRequest
-        fields = [
-            'id', 'user', 'user_email', 'user_name', 'document',
-            'id_number', 'additional_notes', 'status',
+        fields = (
+            'id', 'user', 'user_email', 'user_full_name', 'document', 
+            'id_number', 'additional_notes', 'status', 'reviewed_by', 
             'rejection_reason', 'created_at', 'reviewed_at'
-        ]
-        read_only_fields = ['id', 'user', 'status', 'created_at', 'reviewed_at']
+        )
+        read_only_fields = (
+            'id', 'user', 'user_email', 'user_full_name', 'status', 
+            'reviewed_by', 'reviewed_at', 'created_at', 'rejection_reason'
+        )
 
 
-class VerificationReviewSerializer(serializers.Serializer):
-    """Serializer for reviewing verification requests"""
-    status = serializers.ChoiceField(choices=['verified', 'rejected'])
+class AdminVerificationReviewSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=('verified', 'rejected'))
     rejection_reason = serializers.CharField(required=False, allow_blank=True)
-    
-    def validate(self, attrs):
-        if attrs['status'] == 'rejected' and not attrs.get('rejection_reason'):
-            raise serializers.ValidationError({
-                "rejection_reason": "Rejection reason is required when rejecting a verification."
-            })
-        return attrs
 
 
 class ProviderProfileSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source='user.email', read_only=True)
-    user_full_name = serializers.CharField(source='user.full_name', read_only=True)
+    user_email = serializers.ReadOnlyField(source='user.email')
+    user_full_name = serializers.ReadOnlyField(source='user.full_name')
     user_avatar = serializers.ImageField(source='user.avatar', read_only=True)
-    
+    user_location = serializers.ReadOnlyField(source='user.location')
+    user_is_online = serializers.ReadOnlyField(source='user.is_online')
+    user_last_active = serializers.DateTimeField(source='user.last_active', read_only=True)
+    user_stripe_onboarding_complete = serializers.BooleanField(source='user.stripe_onboarding_complete', read_only=True)
+
     class Meta:
         model = ProviderProfile
-        fields = [
-            'id', 'user', 'user_email', 'user_full_name', 'user_avatar',
-            'business_logo', 'business_description', 'years_in_business',
-            'website', 'social_links', 'services_offered',
+        fields = (
+            'id', 'user', 'user_email', 'user_full_name', 'user_avatar', 
+            'user_location', 'user_is_online', 'user_last_active', 
+            'user_stripe_onboarding_complete', 'business_logo', 'business_description', 
+            'years_in_business', 'website', 'social_links', 'services_offered',
             'average_rating', 'total_reviews', 'completed_bookings',
             'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'user', 'average_rating', 'total_reviews', 
-                            'completed_bookings', 'created_at', 'updated_at']
+        )
+        read_only_fields = (
+            'id', 'user', 'user_email', 'user_full_name', 'user_avatar', 
+            'user_location', 'user_is_online', 'user_last_active', 
+            'user_stripe_onboarding_complete', 'average_rating', 
+            'total_reviews', 'completed_bookings', 'created_at', 'updated_at'
+        )
 
 
-class ProviderBalanceSerializer(serializers.ModelSerializer):
-    available_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    pending_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+class AdminUserListSerializer(serializers.ModelSerializer):
+    full_name = serializers.ReadOnlyField()
 
     class Meta:
         model = User
-        fields = ['id', 'available_balance', 'pending_balance']
-        read_only_fields = fields
+        fields = (
+            'id', 'full_name', 'email', 'role', 
+            'verification_status', 'is_active', 'created_at'
+        )
