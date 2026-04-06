@@ -189,8 +189,11 @@ class Booking(models.Model):
     
     # Booking details
     date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    pricing_type = models.CharField(max_length=10, choices=ServiceListing.PRICING_TYPES, default='fixed')
+    quantity = models.PositiveIntegerField(null=True, blank=True, help_text="Number of hours or days, depending on pricing_type")
+    service_price_at_booking = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], null=True, blank=True)
     
     # Pricing
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])

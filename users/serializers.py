@@ -146,3 +146,17 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             'id', 'full_name', 'email', 'role', 
             'verification_status', 'is_active', 'created_at'
         )
+
+class UserSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'first_name', 'last_name', 'full_name', 'avatar', 'role')
+        read_only_fields = ('id', 'first_name', 'last_name', 'full_name', 'avatar', 'role')
+
+class ProviderBalanceSerializer(serializers.ModelSerializer):
+    available_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    pending_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = User
+        fields = ('available_balance', 'pending_balance')

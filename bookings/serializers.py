@@ -31,11 +31,12 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     date = serializers.DateField(required=False)
     start_time = serializers.TimeField(required=False)
     end_time = serializers.TimeField(required=False)
+    quantity = serializers.IntegerField(required=False, min_value=1, default=1)
     coupon_code = serializers.CharField(required=False, write_only=True)
 
     class Meta:
         model = Booking
-        fields = ['listing', 'availability', 'date', 'start_time', 'end_time', 'coupon_code']
+        fields = ['listing', 'availability', 'date', 'start_time', 'end_time', 'quantity', 'coupon_code']
 
     def validate(self, data):
         listing = data['listing']
@@ -74,6 +75,31 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         if conflicting:
             raise serializers.ValidationError("This time slot is already booked.")
 
+        # --- Pricing calculation ---
+        base_price = listing.price
+        pricing_type = listing.pricing_type
+        quantity = data.get('quantity', 1)
+
+        if pricing_type == 'hourly':
+            # Calculate duration in hours if quantity is not explicitly provided
+            # For now, let's assume availability slot determines the duration
+            from datetime import datetime
+            duration = datetime.combine(availability.date, availability.end_time) - datetime.combine(availability.date, availability.start_time)
+            hours = duration.total_seconds() / 3600
+            quantity = int(hours) if hours >= 1 else 1 # Minimum 1 hour
+            data['quantity'] = quantity
+        elif pricing_type == 'daily':
+            # For now, assume 1 slot = 1 day if pricing is daily
+            quantity = 1
+            data['quantity'] = quantity
+        else: # fixed / per service
+            quantity = 1
+            data['quantity'] = quantity
+
+        total_base_amount = base_price * Decimal(quantity)
+        data['pricing_type'] = pricing_type
+        data['service_price_at_booking'] = base_price
+
         # --- Coupon handling ---
         coupon_code = data.get('coupon_code')
         if coupon_code:
@@ -96,18 +122,17 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("This coupon is not applicable to this service.")
 
             # Check minimum order amount
-            total = listing.price
-            if coupon.min_order_amount and total < coupon.min_order_amount:
+            if coupon.min_order_amount and total_base_amount < coupon.min_order_amount:
                 raise serializers.ValidationError(
                     f"Minimum order amount of {coupon.min_order_amount} required for this coupon."
                 )
 
             # Calculate discounted total
-            discounted_total = coupon.apply_discount(total)
+            discounted_total = coupon.apply_discount(total_base_amount)
             data['discounted_total'] = discounted_total
             data['coupon'] = coupon
         else:
-            data['discounted_total'] = listing.price
+            data['discounted_total'] = total_base_amount
             data['coupon'] = None
 
         return data
@@ -140,6 +165,9 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             date=validated_data['date'],
             start_time=validated_data['start_time'],
             end_time=validated_data['end_time'],
+            pricing_type=validated_data['pricing_type'],
+            quantity=validated_data['quantity'],
+            service_price_at_booking=validated_data['service_price_at_booking'],
             total_amount=discounted_total,
             platform_fee=platform_fee,
             provider_amount=provider_amount,
@@ -196,10 +224,12 @@ class BookingDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'listing', 'listing_title', 'customer', 'customer_name',
             'provider', 'provider_name', 'date', 'start_time', 'end_time',
+            'pricing_type', 'quantity', 'service_price_at_booking',
             'total_amount', 'platform_fee', 'provider_amount',
             'stripe_payment_intent_id', 'status', 'created_at'
         ]
         read_only_fields = ['id', 'stripe_payment_intent_id', 'status', 'created_at']
+
 
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:

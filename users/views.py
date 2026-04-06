@@ -2,6 +2,7 @@ from rest_framework import generics, serializers, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -67,13 +68,17 @@ class LoginView(TokenObtainPairView):
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
+class AdminLoginView(LoginView):
+    pass
+
+
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         try:
             refresh_token = request.data["refresh_token"]
-            token = RefreshToken(refresh_token) # type: ignore
+            token = RefreshToken(refresh_token)
             token.blacklist()
             return Response(status=status.HTTP_205_RESET_CONTENT)
         except Exception as e:
