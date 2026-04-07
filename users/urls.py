@@ -23,7 +23,8 @@ urlpatterns = [
     # Admin
     path('admin/verification/queue/', views.AdminVerificationQueueView.as_view(), name='admin_verification_queue'),
     path('admin/verification/review/<uuid:request_id>/', views.AdminVerificationReviewView.as_view(), name='admin_verification_review'),
-    path('admin/users/', views.AdminUserListView.as_view(), name='admin_user_list'), # New admin endpoint
+    path('admin/users/', views.AdminUserListView.as_view(), name='admin_user_list'),
+    path('admin/users/<uuid:user_id>/', views.AdminUserUpdateView.as_view(), name='admin_user_update'),
 
     # Provider Endpoint
     path('provider/profile/', views.ProviderOwnProfileView.as_view(), name='provider-profile-own'), 

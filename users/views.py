@@ -37,6 +37,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
 
 class AdminRegisterView(generics.CreateAPIView):
@@ -303,6 +305,20 @@ class StripeOnboardingReturnView(APIView):
             except stripe.error.StripeError:
                 pass
         return Response({'error': 'Onboarding incomplete'}, status=400)
+
+
+class AdminUserUpdateView(APIView):
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+        is_active = request.data.get('is_active')
+        if is_active is None or not isinstance(is_active, bool):
+            return Response({'is_active': 'This field is required and must be a boolean.'}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_active = is_active
+        user.save(update_fields=['is_active'])
+        action = 'reinstated' if is_active else 'suspended'
+        return Response({'detail': f'User {user.email} has been {action}.'}, status=status.HTTP_200_OK)
 
 
 class AdminUserListView(generics.ListAPIView):
