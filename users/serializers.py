@@ -35,6 +35,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."}) # type: ignore
         validate_email(attrs['email'])
+        from .models import UserRole
+        if attrs.get('role') == UserRole.ADMIN:
+            raise serializers.ValidationError({"role": "Cannot register as admin via this endpoint."})
         return attrs
 
     def create(self, validated_data):
@@ -51,17 +54,18 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class AdminRegisterSerializer(RegisterSerializer):
-    """Admin registration serializer - allows setting is_active and is_staff"""
-    is_active = serializers.BooleanField(required=False, default=True)
-    is_staff = serializers.BooleanField(required=False, default=False)
+    """Admin registration serializer - always creates admin users"""
 
     class Meta(RegisterSerializer.Meta):
-        fields = RegisterSerializer.Meta.fields + ('is_active', 'is_staff')
+        fields = RegisterSerializer.Meta.fields
 
     def create(self, validated_data):
+        from .models import UserRole, VerificationStatus
+        validated_data['role'] = UserRole.ADMIN
         user = super().create(validated_data)
-        user.is_active = validated_data.get('is_active', True)
-        user.is_staff = validated_data.get('is_staff', False)
+        user.is_staff = True
+        user.is_active = True
+        user.verification_status = VerificationStatus.VERIFIED
         user.save()
         return user
 

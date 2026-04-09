@@ -44,7 +44,12 @@ class RegisterView(generics.CreateAPIView):
 class AdminRegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = AdminRegisterSerializer
-    permission_classes = [IsAdmin] # Only admins can create admin users
+
+    def get_permissions(self):
+        # Allow unauthenticated access only when bootstrapping the first admin
+        if not User.objects.filter(role=UserRole.ADMIN).exists():
+            return [permissions.AllowAny()]
+        return [IsAdmin()]
 
 
 class LoginView(TokenObtainPairView):
@@ -71,7 +76,17 @@ class LoginView(TokenObtainPairView):
 
 
 class AdminLoginView(LoginView):
-    pass
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            email = request.data.get('email')
+            try:
+                user = User.objects.get(email=email)
+                if user.role != UserRole.ADMIN:
+                    return Response({'detail': 'Access denied. Admin account required.'}, status=status.HTTP_403_FORBIDDEN)
+            except User.DoesNotExist:
+                pass
+        return response
 
 
 class LogoutView(APIView):
