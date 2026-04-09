@@ -71,11 +71,18 @@ class AdminRegisterSerializer(RegisterSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    avatar = serializers.SerializerMethodField()
+
+    def get_avatar(self, obj):
+        if obj.avatar:
+            return obj.avatar.url
+        return None
+
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'first_name', 'last_name', 'full_name', 'role', 
-            'phone_number', 'avatar', 'bio', 'location', 
+            'id', 'email', 'first_name', 'last_name', 'full_name', 'role',
+            'phone_number', 'avatar', 'bio', 'location',
             'verification_status', 'is_active', 'is_online', 'last_active',
             'created_at', 'updated_at', 'stripe_account_id', 'stripe_onboarding_complete',
             'email_notifications', 'sms_notifications', 'business_name', 'business_address', 'tax_id'
@@ -117,18 +124,29 @@ class AdminVerificationReviewSerializer(serializers.Serializer):
 class ProviderProfileSerializer(serializers.ModelSerializer):
     user_email = serializers.ReadOnlyField(source='user.email')
     user_full_name = serializers.ReadOnlyField(source='user.full_name')
-    user_avatar = serializers.ImageField(source='user.avatar', read_only=True)
+    user_avatar = serializers.SerializerMethodField()
+    business_logo = serializers.SerializerMethodField()
     user_location = serializers.ReadOnlyField(source='user.location')
     user_is_online = serializers.ReadOnlyField(source='user.is_online')
     user_last_active = serializers.DateTimeField(source='user.last_active', read_only=True)
     user_stripe_onboarding_complete = serializers.BooleanField(source='user.stripe_onboarding_complete', read_only=True)
 
+    def get_user_avatar(self, obj):
+        if obj.user.avatar:
+            return obj.user.avatar.url
+        return None
+
+    def get_business_logo(self, obj):
+        if obj.business_logo:
+            return obj.business_logo.url
+        return None
+
     class Meta:
         model = ProviderProfile
         fields = (
-            'id', 'user', 'user_email', 'user_full_name', 'user_avatar', 
-            'user_location', 'user_is_online', 'user_last_active', 
-            'user_stripe_onboarding_complete', 'business_logo', 'business_description', 
+            'id', 'user', 'user_email', 'user_full_name', 'user_avatar',
+            'user_location', 'user_is_online', 'user_last_active',
+            'user_stripe_onboarding_complete', 'business_logo', 'business_description',
             'years_in_business', 'website', 'social_links', 'services_offered',
             'average_rating', 'total_reviews', 'completed_bookings',
             'created_at', 'updated_at'

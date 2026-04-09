@@ -21,12 +21,12 @@ class ConversationListView(generics.ListAPIView):
 
         # Get conversations linked to projects where the user is the hub, customer, or a provider member
         project_conversations = Conversation.objects.filter(
-            Q(project__hub=user) | 
-            Q(project__customer=user) | 
+            Q(project__hub=user) |
+            Q(project__customer=user) |
             Q(project__members__provider=user)
-        ).distinct()
-        
-        return (direct_conversations | project_conversations).order_by('-updated_at')
+        )
+
+        return (direct_conversations | project_conversations).distinct().order_by('-updated_at')
 
 class MessageHistoryView(generics.ListAPIView):
     """Get message history for a specific conversation"""

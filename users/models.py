@@ -133,7 +133,7 @@ class User(AbstractUser):
         confirmed_earnings = Booking.objects.filter(
             provider=self,
             status='confirmed',
-            transaction__isnull=False
+            transactions__isnull=False
         ).aggregate(
             total_earned=Sum(F('provider_amount'))
         )['total_earned'] or Decimal('0.00')
@@ -159,7 +159,7 @@ class User(AbstractUser):
         pending_earnings = Booking.objects.filter(
             provider=self,
             status='confirmed',
-            transaction__isnull=True
+            transactions__isnull=True
         ).aggregate(
             total_pending=Sum(F('provider_amount'))
         )['total_pending'] or Decimal('0.00')
