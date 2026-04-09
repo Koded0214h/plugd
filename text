@@ -1,0 +1,8 @@
+python manage.py shell -c "                                                                                                                                                                                        
+  from users.models import User, UserRole, VerificationStatus
+  User.objects.filter(role='admin').delete()                                                                                                                                                                         
+  u = User(email='admin@plugd.com', username='admin@plugd.com', first_name='Admin', last_name='User', role=UserRole.ADMIN, is_staff=True, verification_status=VerificationStatus.VERIFIED)
+  u.set_password('AdminPass123!')                                                                                                                                                                                    
+  u.save()
+  print('Admin created:', u.email)                                                                                                                                                                                   
+"       
