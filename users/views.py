@@ -231,6 +231,8 @@ class ProviderOwnProfileView(generics.RetrieveUpdateAPIView):
 class PublicProviderProfileView(generics.RetrieveAPIView):
     queryset = ProviderProfile.objects.all()
     serializer_class = ProviderProfileSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     lookup_field = 'user_id'
 
     def get_object(self):
