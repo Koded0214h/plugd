@@ -581,3 +581,56 @@ class BookingRejectView(APIView):
             booking.availability.save(update_fields=['reserved_until'])
 
         return Response({'message': 'Booking rejected and cancelled.'}, status=status.HTTP_200_OK)
+
+
+class BookingCompleteView(APIView):
+    """Provider marks a confirmed booking as completed and triggers payout."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.get(pk=pk, status='confirmed')
+        except Booking.DoesNotExist:
+            return Response({'error': 'Booking not found or not in confirmed status.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if booking.provider != request.user:
+            raise PermissionDenied("You are not the provider for this booking.")
+
+        if not request.user.stripe_account_id or not request.user.stripe_onboarding_complete:
+            return Response({'error': 'Stripe onboarding must be completed before receiving payouts.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark booking complete
+        booking.status = 'completed'
+        booking.save(update_fields=['status', 'updated_at'])
+
+        # Create payout record and initiate Stripe Transfer
+        payout_request = PayoutRequest.objects.create(
+            provider=request.user,
+            amount=booking.provider_amount,
+            status='processing',
+        )
+
+        try:
+            transfer = stripe.Transfer.create(
+                amount=int(booking.provider_amount * 100),
+                currency='usd',
+                destination=request.user.stripe_account_id,
+                metadata={
+                    'booking_id': str(booking.id),
+                    'payout_request_id': str(payout_request.id),
+                    'provider_id': str(request.user.id),
+                }
+            )
+            payout_request.stripe_transfer_id = transfer.id
+            payout_request.save(update_fields=['stripe_transfer_id'])
+        except stripe.error.StripeError as e:
+            payout_request.status = 'failed'
+            payout_request.save(update_fields=['status'])
+            return Response({'error': f"Booking marked complete but payout failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'message': 'Booking completed and payout initiated.',
+            'booking_id': str(booking.id),
+            'payout_amount': str(booking.provider_amount),
+            'payout_request_id': str(payout_request.id),
+        }, status=status.HTTP_200_OK)

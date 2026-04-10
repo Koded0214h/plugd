@@ -102,6 +102,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 class VerificationRequestSerializer(serializers.ModelSerializer):
     user_email = serializers.ReadOnlyField(source='user.email')
     user_full_name = serializers.ReadOnlyField(source='user.full_name')
+    document = serializers.URLField(read_only=True)
 
     class Meta:
         model = VerificationRequest

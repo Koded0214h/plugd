@@ -15,6 +15,7 @@ urlpatterns = [
     path('bookings/<uuid:pk>/', views.BookingDetailView.as_view(), name='booking-detail'),
     path('bookings/<uuid:pk>/approve/', views.BookingApproveView.as_view(), name='booking-approve'),
     path('bookings/<uuid:pk>/reject/', views.BookingRejectView.as_view(), name='booking-reject'),
+    path('bookings/<uuid:pk>/complete/', views.BookingCompleteView.as_view(), name='booking-complete'),
 
     # Stripe webhook
     path('stripe-webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),

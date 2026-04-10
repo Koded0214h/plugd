@@ -144,18 +144,23 @@ class VerificationRequestView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        # Ensure only the requesting user's verification request is created
         if VerificationRequest.objects.filter(user=self.request.user, status=VerificationStatus.PENDING).exists():
             raise serializers.ValidationError("A pending verification request already exists for this user.")
 
         verification_doc_file = self.request.data.get('document')
-        if verification_doc_file:
-            upload_result = cloudinary.uploader.upload(verification_doc_file)
-            serializer.validated_data['document'] = upload_result['secure_url']
-        else:
+        if not verification_doc_file:
             raise serializers.ValidationError("Verification document is required.")
 
-        serializer.save(user=self.request.user, status=VerificationStatus.PENDING)
+        try:
+            upload_result = cloudinary.uploader.upload(verification_doc_file)
+        except Exception as e:
+            raise serializers.ValidationError(f"Document upload failed: {str(e)}")
+
+        serializer.save(
+            user=self.request.user,
+            status=VerificationStatus.PENDING,
+            document=upload_result['secure_url'],
+        )
         self.request.user.submit_for_verification()
 
 

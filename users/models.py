@@ -18,6 +18,7 @@ class UserRole(models.TextChoices):
     ADMIN = 'admin', 'Admin'
 
 class VerificationStatus(models.TextChoices):
+    UNVERIFIED = 'unverified', 'Unverified'
     PENDING = 'pending', 'Pending'
     VERIFIED = 'verified', 'Verified'
     REJECTED = 'rejected', 'Rejected'
@@ -39,7 +40,7 @@ class User(AbstractUser):
     verification_status = models.CharField(
         max_length=20,
         choices=VerificationStatus.choices,
-        default=VerificationStatus.PENDING
+        default=VerificationStatus.UNVERIFIED
     )
     verification_document = models.ImageField(
         upload_to='verification_docs/',
@@ -171,7 +172,7 @@ class VerificationRequest(models.Model):
     """Track verification requests for admin queue"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verification_requests')
-    document = models.ImageField(upload_to='verification_requests/')
+    document = models.URLField(max_length=500)
     id_number = models.CharField(max_length=100, blank=True)
     additional_notes = models.TextField(blank=True)
     
