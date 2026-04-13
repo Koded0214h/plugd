@@ -63,6 +63,7 @@ class ServiceListing(models.Model):
     
     # Location (could be text or coordinates – simple for now)
     location = models.CharField(max_length=255, blank=True)
+    address = models.CharField(max_length=500, blank=True, help_text="Specific street address, optional for mobile/remote providers")
     is_remote_available = models.BooleanField(default=False)
     
     # Media

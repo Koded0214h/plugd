@@ -70,24 +70,7 @@ class BookingCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        booking = serializer.save()
-        # Create Stripe PaymentIntent
-        try:
-            intent = stripe.PaymentIntent.create(
-                amount=int(booking.total_amount * 100),  # in cents
-                currency=booking.listing.currency.lower(),
-                metadata={
-                    'booking_id': str(booking.id),
-                    'customer_id': str(booking.customer.id),
-                    'provider_id': str(booking.provider.id)
-                }
-            )
-            booking.stripe_payment_intent_id = intent.id
-            booking.stripe_client_secret = intent.client_secret
-            booking.save()
-        except stripe.error.StripeError as e:
-            booking.delete()
-            raise serializers.ValidationError(f"Stripe error: {str(e)}")
+        serializer.save()
 
 
 # Get booking details (for customer or provider)
@@ -173,6 +156,18 @@ class StripeWebhookView(APIView):
                     booking.availability.save()
             except Booking.DoesNotExist:
                 pass
+
+        elif event['type'] == 'account.updated':
+            account = event['data']['object']
+            user_id = account.get('metadata', {}).get('user_id')
+            if user_id:
+                try:
+                    user = User.objects.get(id=user_id)
+                    if account.get('charges_enabled') and account.get('payouts_enabled'):
+                        user.stripe_onboarding_complete = True
+                        user.save(update_fields=['stripe_onboarding_complete'])
+                except User.DoesNotExist:
+                    pass
 
         return Response(status=200)
 

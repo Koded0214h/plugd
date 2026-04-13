@@ -19,15 +19,16 @@ class ServiceListingSerializer(serializers.ModelSerializer):
     provider_email = serializers.EmailField(source='provider.email', read_only=True)
     provider_name = serializers.CharField(source='provider.full_name', read_only=True)
     provider_avatar = serializers.ImageField(source='provider.avatar', read_only=True)
+    business_logo = serializers.ImageField(source='provider.provider_profile.business_logo', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     images = ServiceImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ServiceListing
         fields = [
-            'id', 'provider', 'provider_email', 'provider_name', 'provider_avatar',
+            'id', 'provider', 'provider_email', 'provider_name', 'provider_avatar', 'business_logo',
             'category', 'category_name', 'title', 'description',
-            'pricing_type', 'price', 'currency', 'location', 'is_remote_available',
+            'pricing_type', 'price', 'currency', 'location', 'address', 'is_remote_available',
             'booking_approval_type',
             'featured_image', 'is_active', 'views_count', 'created_at', 'updated_at',
             'images'
@@ -37,11 +38,13 @@ class ServiceListingSerializer(serializers.ModelSerializer):
 
 class ServiceListingCreateUpdateSerializer(serializers.ModelSerializer):
     """Used for write operations (excludes read-only fields)."""
+    location = serializers.CharField(required=True)
+
     class Meta:
         model = ServiceListing
         fields = [
             'category', 'title', 'description',
-            'pricing_type', 'price', 'currency', 'location', 'is_remote_available',
+            'pricing_type', 'price', 'currency', 'location', 'address', 'is_remote_available',
             'booking_approval_type',
             'featured_image', 'is_active'
         ]
@@ -122,9 +125,8 @@ class ReviewSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("You can only review bookings you made.")
         
         # Check if booking is completed (or in a state allowing review)
-        # For now, we'll assume confirmed bookings can be reviewed. A 'completed' status might be better.
-        if booking.status not in ['confirmed']: # Consider adding 'completed' status if it exists
-            raise serializers.ValidationError("Booking must be confirmed to be reviewed.")
+        if booking.status not in ['confirmed', 'completed']:
+            raise serializers.ValidationError("Booking must be confirmed or completed to be reviewed.")
 
         # Check if a review already exists for this booking
         if Review.objects.filter(booking=booking).exists():
@@ -144,8 +146,8 @@ class ReviewSerializer(serializers.ModelSerializer):
         
         # Update provider's average rating and total reviews count
         provider = review.provider
-        # Only consider 'confirmed' bookings for average rating calculation
-        provider_reviews = Review.objects.filter(provider=provider, booking__status='confirmed') 
+        # Only consider 'confirmed' or 'completed' bookings for average rating calculation
+        provider_reviews = Review.objects.filter(provider=provider, booking__status__in=['confirmed', 'completed']) 
         
         if provider_reviews.exists():
             # Use Avg aggregation from django.db.models
