@@ -310,23 +310,7 @@ class StripeOnboardingRefreshView(APIView):
         return Response({'message': 'Redirect to create account endpoint'})
 
 
-class StripeOnboardingReturnView(APIView):
-    """After onboarding completes, Stripe redirects here."""
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
-        user = request.user
-        # Check if onboarding was actually completed
-        if user.stripe_account_id:
-            try:
-                account = stripe.Account.retrieve(user.stripe_account_id)
-                if account.charges_enabled and account.payouts_enabled:
-                    user.stripe_onboarding_complete = True
-                    user.save()
-                    return Response({'message': 'Onboarding complete!'})
-            except stripe.error.StripeError:
-                pass
-        return Response({'error': 'Onboarding incomplete'}, status=400)
 
 
 class AdminUserUpdateView(APIView):

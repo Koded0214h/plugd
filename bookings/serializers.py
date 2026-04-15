@@ -218,6 +218,13 @@ class BookingDetailSerializer(serializers.ModelSerializer):
     listing_title = serializers.CharField(source='listing.title', read_only=True)
     customer_name = serializers.CharField(source='customer.full_name', read_only=True)
     provider_name = serializers.CharField(source='provider.full_name', read_only=True)
+    stripe_client_secret = serializers.SerializerMethodField()
+
+    def get_stripe_client_secret(self, obj):
+        request = self.context.get('request')
+        if request and request.user == obj.customer and obj.status == 'pending':
+            return obj.stripe_client_secret
+        return None
 
     class Meta:
         model = Booking
@@ -226,9 +233,9 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'provider', 'provider_name', 'date', 'start_time', 'end_time',
             'pricing_type', 'quantity', 'service_price_at_booking',
             'total_amount', 'platform_fee', 'provider_amount',
-            'stripe_payment_intent_id', 'status', 'created_at'
+            'stripe_payment_intent_id', 'status', 'created_at', 'stripe_client_secret'
         ]
-        read_only_fields = ['id', 'stripe_payment_intent_id', 'status', 'created_at']
+        read_only_fields = ['id', 'stripe_payment_intent_id', 'status', 'created_at', 'stripe_client_secret']
 
 
 class TransactionSerializer(serializers.ModelSerializer):
