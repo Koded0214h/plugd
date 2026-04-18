@@ -89,8 +89,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             quantity = int(hours) if hours >= 1 else 1 # Minimum 1 hour
             data['quantity'] = quantity
         elif pricing_type == 'daily':
-            # For now, assume 1 slot = 1 day if pricing is daily
-            quantity = 1
+            quantity = data.get('quantity', 1)
             data['quantity'] = quantity
         else: # fixed / per service
             quantity = 1

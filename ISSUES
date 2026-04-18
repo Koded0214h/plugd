@@ -1,0 +1,24 @@
+I have a list of things I need you to confirm or fix on the backend so I can complete the frontend wiring. Some of these are critical blockers.
+CRITICAL — Stripe payment flow
+When a provider approves a manual booking, the booking status moves to pending and the customer needs to pay. The problem is the BookingDetail response only returns stripe_payment_intent_id — it does not return a stripe_client_secret. Without the client secret, I cannot render the Stripe Elements payment form for existing bookings.
+I need one of these from you:
+
+A new endpoint like GET /api/bookings/bookings/{id}/client-secret/ that returns the client secret for an existing payment intent
+OR have the booking create endpoint return the client secret in the response when the booking is instant approved
+
+CRITICAL — booking_approval_type mismatch
+The PublicListing response returns booking_approval_type as either 'instant' or 'request'. But the create listing form sends 'instant' or 'manual'. Which one does the backend actually expect and return? Please confirm the exact value so I can fix the type mismatch everywhere.
+Service listing images
+Does POST /api/core/listings/ accept multiple image files via FormData using fd.append('images', file)? I need to know if the backend stores them in the images[] array on the listing. If not, is there a separate endpoint like POST /api/core/listings/{id}/images/ I should use instead?
+Daily availability slots
+When a listing is priced per day, I am creating availability slots with start_time: "00:00:00" and end_time: "23:59:00" for each day in a range. Does the backend accept this format without validation errors?
+Also — when a customer books a daily listing and sends quantity: 3 (meaning 3 days), does the backend handle the range from the start date, or does it need individual slot IDs for each day?
+Overbooking error response
+When a customer tries to book a slot that is already taken, what does the 400 error response look like? What field names are in the response body? I need the exact shape so I can show the right error message.
+Hub pricing restriction
+Can the backend restrict pricing_type options by user role? Hub accounts should only be allowed to create fixed price listings. I have done this on the frontend already but if the backend can enforce it too that would be better.
+Stripe return endpoint
+When a provider completes Stripe onboarding and lands on /stripe/return, I call GET /api/users/stripe/return/ then refetch /api/users/profile/. Does stripe_onboarding_complete update to true immediately after that call? And what does GET /users/stripe/return/ actually return in the response body?
+Verification field name
+The VerificationRequest schema in the old spec used user_name but the updated spec uses user_full_name. Can you confirm which field name the live API returns?
+Please reply with answers to each of these and let me know if any need changes on your end. Thanks man.

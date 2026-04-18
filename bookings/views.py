@@ -69,8 +69,31 @@ class BookingCreateView(generics.CreateAPIView):
     serializer_class = BookingCreateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def perform_create(self, serializer):
-        serializer.save()
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        booking = serializer.save()
+        detail = BookingDetailSerializer(booking, context={'request': request})
+        return Response(detail.data, status=status.HTTP_201_CREATED)
+
+
+class BookingClientSecretView(APIView):
+    """Return stripe_client_secret for a pending booking (customer only)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        booking = get_object_or_404(Booking, pk=pk, customer=request.user)
+        if booking.status != 'pending':
+            return Response(
+                {'error': 'No payment pending for this booking.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not booking.stripe_client_secret:
+            return Response(
+                {'error': 'Payment not yet initiated for this booking.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response({'client_secret': booking.stripe_client_secret})
 
 
 # Get booking details (for customer or provider)

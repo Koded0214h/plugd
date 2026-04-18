@@ -32,5 +32,6 @@ urlpatterns = [
 
     path('stripe/create-account/', views.CreateStripeConnectAccountView.as_view(), name='stripe-create-account'),
     path('stripe/refresh/', views.StripeOnboardingRefreshView.as_view(), name='stripe-refresh'),
+    path('stripe/return/', views.StripeReturnView.as_view(), name='stripe-return'),
 
 ]

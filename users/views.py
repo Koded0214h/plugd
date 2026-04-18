@@ -310,6 +310,36 @@ class StripeOnboardingRefreshView(APIView):
         return Response({'message': 'Redirect to create account endpoint'})
 
 
+class StripeReturnView(APIView):
+    """
+    Called after provider completes Stripe onboarding and lands on /stripe/return.
+    Checks Stripe account status and updates stripe_onboarding_complete.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role != 'provider':
+            return Response({'error': 'Only providers can complete Stripe onboarding.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if not user.stripe_account_id:
+            return Response({'stripe_onboarding_complete': False, 'charges_enabled': False, 'payouts_enabled': False})
+
+        try:
+            account = stripe.Account.retrieve(user.stripe_account_id)
+            onboarding_complete = bool(account.charges_enabled and account.payouts_enabled)
+            if onboarding_complete and not user.stripe_onboarding_complete:
+                user.stripe_onboarding_complete = True
+                user.save(update_fields=['stripe_onboarding_complete'])
+            return Response({
+                'stripe_onboarding_complete': user.stripe_onboarding_complete,
+                'charges_enabled': account.charges_enabled,
+                'payouts_enabled': account.payouts_enabled,
+            })
+        except stripe.error.StripeError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 

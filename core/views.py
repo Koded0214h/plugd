@@ -10,11 +10,13 @@ from django.conf import settings
 from datetime import datetime, timedelta
 import stripe
 
+import cloudinary.uploader
 from .models import ServiceCategory, ServiceListing, ServiceImage, ServiceRequest, Quote, Review, PlatformSetting # Add PlatformSetting
 from .serializers import (
-    ServiceListingSerializer, 
+    ServiceListingSerializer,
     ServiceListingCreateUpdateSerializer,
     ServiceCategorySerializer,
+    ServiceImageSerializer,
     ServiceRequestSerializer,
     QuoteSerializer,
     ReviewSerializer, # Import ReviewSerializer
@@ -36,20 +38,48 @@ class CategoryListView(generics.ListAPIView):
 
 # Listing views
 class ProviderListingListCreateView(generics.ListCreateAPIView):
-    """List all listings for the authenticated provider, or create a new one."""
+    """List all listings for the authenticated provider or hub, or create a new one."""
     serializer_class = ServiceListingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
-        if user.role != 'provider':
-            return ServiceListing.objects.none()
-        return ServiceListing.objects.filter(provider=user)
+        if user.role in ('provider', 'hub'):
+            return ServiceListing.objects.filter(provider=user)
+        return ServiceListing.objects.none()
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'provider':
-            raise PermissionDenied("Only providers can create listings.")
-        serializer.save(provider=self.request.user)
+        user = self.request.user
+        if user.role not in ('provider', 'hub'):
+            raise PermissionDenied("Only providers or hubs can create listings.")
+        if user.role == 'hub' and serializer.validated_data.get('pricing_type') != 'fixed':
+            raise serializers.ValidationError({"pricing_type": "Hub accounts can only create fixed price listings."})
+        serializer.save(provider=user)
+
+
+class ListingImageUploadView(APIView):
+    """Upload additional images for an existing listing. Accepts multipart/form-data with 'images' files."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        listing = get_object_or_404(ServiceListing, pk=pk, provider=request.user)
+        images = request.FILES.getlist('images')
+        if not images:
+            return Response({'error': 'No images provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created = []
+        for image_file in images:
+            try:
+                result = cloudinary.uploader.upload(image_file, folder='service_listings/')
+                service_image = ServiceImage.objects.create(
+                    listing=listing,
+                    image=result['secure_url'],
+                )
+                created.append(ServiceImageSerializer(service_image).data)
+            except Exception as e:
+                return Response({'error': f'Upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(created, status=status.HTTP_201_CREATED)
 
 
 class ProviderListingRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
