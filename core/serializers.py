@@ -10,6 +10,11 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 
 
 class ServiceImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
+    def get_image(self, obj):
+        return obj.image.url if obj.image else None
+
     class Meta:
         model = ServiceImage
         fields = ['id', 'image', 'caption', 'order']

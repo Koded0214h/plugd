@@ -4,10 +4,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg # Import Avg for aggregate calculation
+from django.db.models import Q, Avg
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
 from datetime import datetime, timedelta
+from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiResponse
 import stripe
 
 import cloudinary.uploader
@@ -57,8 +59,16 @@ class ProviderListingListCreateView(generics.ListCreateAPIView):
         serializer.save(provider=user)
 
 
+@extend_schema(
+    request=inline_serializer(
+        name='ListingImageUploadRequest',
+        fields={'images': serializers.ListField(child=serializers.ImageField())},
+    ),
+    responses={201: ServiceImageSerializer(many=True)},
+    summary='Upload images for a listing',
+    description='Accepts multipart/form-data. Use field name **images** (repeatable) for each file.',
+)
 class ListingImageUploadView(APIView):
-    """Upload additional images for an existing listing. Accepts multipart/form-data with 'images' files."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
@@ -73,13 +83,27 @@ class ListingImageUploadView(APIView):
                 result = cloudinary.uploader.upload(image_file, folder='service_listings/')
                 service_image = ServiceImage.objects.create(
                     listing=listing,
-                    image=result['secure_url'],
+                    image=result['public_id'],
                 )
                 created.append(ServiceImageSerializer(service_image).data)
             except Exception as e:
                 return Response({'error': f'Upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(created, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    responses={204: None},
+    summary='Delete a listing image',
+)
+class ListingImageDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk, image_id):
+        listing = get_object_or_404(ServiceListing, pk=pk, provider=request.user)
+        image = get_object_or_404(ServiceImage, pk=image_id, listing=listing)
+        image.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ProviderListingRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
@@ -449,6 +473,23 @@ class ProviderReviewListView(generics.ListAPIView):
         if user.role == 'provider':
             return Review.objects.filter(provider=user).order_by('-created_at')
         return Review.objects.none()
+
+
+@extend_schema(
+    responses={200: ReviewSerializer(many=True)},
+    summary='List public reviews for a provider',
+    description='Returns all reviews for the given provider user ID. No authentication required.',
+)
+class PublicProviderReviewListView(generics.ListAPIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        provider_id = self.kwargs['provider_id']
+        return Review.objects.filter(
+            provider__id=provider_id,
+            provider__role='provider',
+        ).order_by('-created_at')
 
 
 class AdminPlatformSettingView(generics.ListAPIView, generics.RetrieveUpdateAPIView):

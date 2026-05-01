@@ -9,8 +9,10 @@ urlpatterns = [
     path('listings/', views.ProviderListingListCreateView.as_view(), name='provider-listing-list'),
     path('listings/<uuid:pk>/', views.ProviderListingRetrieveUpdateDestroyView.as_view(), name='provider-listing-detail'),
     path('listings/<uuid:pk>/images/', views.ListingImageUploadView.as_view(), name='listing-image-upload'),
+    path('listings/<uuid:pk>/images/<uuid:image_id>/', views.ListingImageDeleteView.as_view(), name='listing-image-delete'),
     path('public/listings/', views.PublicListingListView.as_view(), name='public-listing-list'),
     path('public/listings/<uuid:pk>/', views.PublicListingDetailView.as_view(), name='public-listing-detail'),
+    path('public/providers/<uuid:provider_id>/reviews/', views.PublicProviderReviewListView.as_view(), name='public-provider-review-list'),
 
     # Service Request views (Customer & Provider)
     path('requests/', views.ServiceRequestListView.as_view(), name='service-request-list'),
