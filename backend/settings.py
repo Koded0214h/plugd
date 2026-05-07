@@ -266,7 +266,7 @@ PLATFORM_FEE_PERCENTAGE = Decimal('9.0')
 STRIPE_CONNECT_CLIENT_ID = os.getenv('STRIPE_CONNECT_CLIENT_ID')
 YOUR_DOMAIN = os.getenv('YOUR_DOMAIN', 'https://plugd-8wkt.onrender.com')
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://plugd-8wkt.onrender.com')
 
 
 # Email
