@@ -7,7 +7,6 @@ Version: 2.0
 Date: February 16, 2026
 Status: ---
 
- 
 Table of Contents
 
 1. Executive Summary
@@ -131,7 +130,21 @@ o Row Level Security for data protection
 • Cloudinary – Manages uploads, storage, optimization, and delivery of all images and videos.
 5.5 Email & Communications
 
-• Resend / SendGrid – Sends transactional emails (welcome, booking confirm, payment receipt).
+• Google SMTP – Sends transactional emails (welcome, booking confirm, payment receipt).
+
+11. Google OAuth & Gmail SMTP Setup
+
+• `GOOGLE_OAUTH_CLIENT_ID` - used by the backend to verify Google ID tokens.
+• `EMAIL_HOST_USER` - your Gmail address used as the SMTP sender.
+• `EMAIL_HOST_PASSWORD` - a Gmail App Password, not your normal Gmail password.
+• `DEFAULT_FROM_EMAIL` - the from address shown in outgoing mail.
+• `EMAIL_HOST=smtp.gmail.com`, `EMAIL_PORT=465`, `EMAIL_USE_SSL=True` for Gmail SMTP.
+
+Implementation note:
+
+• This backend expects the frontend to send a Google ID token to `POST /api/users/auth/google/`.
+• The backend verifies the token against `GOOGLE_OAUTH_CLIENT_ID`, creates or reuses the user, and returns JWT access and refresh tokens.
+• A welcome email is sent after registration or Google sign-up.
 5.6 Architecture Diagram
 
 
@@ -208,6 +221,3 @@ Month 3: MVP Completion & Launch
 • Payout Automation Rate: % of payouts without manual intervention. (Target: >95%)
 • User Retention (D1/D7): % returning 1 day and 7 days after sign-up.
 • Net Promoter Score (NPS): User satisfaction. (Target: >40)
- 
-
- 

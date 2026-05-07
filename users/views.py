@@ -22,8 +22,10 @@ from .serializers import (
     AdminVerificationReviewSerializer,
     ProviderProfileSerializer,
     AdminUserListSerializer,  # Import the new serializer
+    GoogleAuthSerializer,
 )
 from core.permissions import IsAdmin, IsCustomer, IsProvider, IsHub
+from .services import send_onboarding_email
 
 
 # Configure Stripe (moved to settings.py, but good to ensure it's available)
@@ -73,6 +75,104 @@ class LoginView(TokenObtainPairView):
             return Response(serializer.validated_data, status=status.HTTP_200_OK)
         else:
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class GoogleAuthView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not settings.GOOGLE_OAUTH_CLIENT_ID:
+            return Response(
+                {'detail': 'Google OAuth is not configured on the server.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        try:
+            from google.auth.transport.requests import Request as GoogleAuthRequest
+            from google.auth import exceptions as google_auth_exceptions
+            from google.oauth2 import id_token as google_id_token
+        except ImportError:
+            return Response(
+                {'detail': 'google-auth is not installed on the server.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        try:
+            payload = google_id_token.verify_oauth2_token(
+                serializer.validated_data['id_token'],
+                GoogleAuthRequest(),
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+            )
+        except (ValueError, google_auth_exceptions.GoogleAuthError):
+            return Response(
+                {'detail': 'Invalid Google token.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not payload.get('email') or not payload.get('email_verified'):
+            return Response(
+                {'detail': 'Google account email is not verified.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        email = payload['email'].strip().lower()
+        first_name = (payload.get('given_name') or '').strip()
+        last_name = (payload.get('family_name') or '').strip()
+        role = serializer.validated_data.get('role', UserRole.CUSTOMER)
+        if role == UserRole.ADMIN:
+            return Response(
+                {'detail': 'Cannot authenticate as admin via Google OAuth.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        created = False
+
+        if user is None:
+            user = User.objects.create(
+                email=email,
+                username=email,
+                first_name=first_name,
+                last_name=last_name,
+                role=role,
+                is_active=True,
+            )
+            user.set_unusable_password()
+            user.save(update_fields=['password'])
+            created = True
+        else:
+            updated_fields = []
+            if first_name and not user.first_name:
+                user.first_name = first_name
+                updated_fields.append('first_name')
+            if last_name and not user.last_name:
+                user.last_name = last_name
+                updated_fields.append('last_name')
+            if not user.is_active:
+                user.is_active = True
+                updated_fields.append('is_active')
+            if updated_fields:
+                user.save(update_fields=updated_fields)
+
+        if created:
+            send_onboarding_email(user, source="google")
+
+        refresh = RefreshToken.for_user(user)
+        user_data = UserProfileSerializer(user).data
+
+        return Response(
+            {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': user_data,
+                'is_new_user': created,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminLoginView(LoginView):

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, VerificationRequest, ProviderProfile
+from .models import User, VerificationRequest, ProviderProfile, UserRole
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from django.core.validators import validate_email
@@ -35,7 +35,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."}) # type: ignore
         validate_email(attrs['email'])
-        from .models import UserRole
         if attrs.get('role') == UserRole.ADMIN:
             raise serializers.ValidationError({"role": "Cannot register as admin via this endpoint."})
         return attrs
@@ -50,6 +49,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         user.set_password(validated_data['password'])
         user.save()
+
+        from .services import send_onboarding_email
+
+        send_onboarding_email(user, source="registration")
         return user
 
 
@@ -183,3 +186,8 @@ class ProviderBalanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('available_balance', 'pending_balance')
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
+    role = serializers.ChoiceField(choices=UserRole.choices, required=False, default=UserRole.CUSTOMER)
