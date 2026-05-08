@@ -8,6 +8,9 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.contrib.auth.tokens import default_token_generator
 import stripe
 import cloudinary.uploader
 
@@ -23,9 +26,11 @@ from .serializers import (
     ProviderProfileSerializer,
     AdminUserListSerializer,  # Import the new serializer
     GoogleAuthSerializer,
+    ForgotPasswordRequestSerializer,
+    ResetPasswordSerializer,
 )
 from core.permissions import IsAdmin, IsCustomer, IsProvider, IsHub
-from .services import send_onboarding_email
+from .services import send_onboarding_email, build_password_reset_link, send_password_reset_email
 
 
 # Configure Stripe (moved to settings.py, but good to ensure it's available)
@@ -75,6 +80,64 @@ class LoginView(TokenObtainPairView):
             return Response(serializer.validated_data, status=status.HTTP_200_OK)
         else:
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = ForgotPasswordRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email'].strip().lower()
+        user = User.objects.filter(email__iexact=email).first()
+
+        if user:
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_link = build_password_reset_link(uidb64, token)
+            send_password_reset_email(user, reset_link)
+
+        return Response(
+            {'detail': 'If an account with that email exists, a password reset link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        uidb64 = serializer.validated_data['uid']
+        token = serializer.validated_data['token']
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, UnicodeDecodeError, User.DoesNotExist):
+            return Response(
+                {'detail': 'Invalid or expired password reset link.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not default_token_generator.check_token(user, token):
+            return Response(
+                {'detail': 'Invalid or expired password reset link.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password'])
+
+        return Response(
+            {'detail': 'Password reset successfully.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class GoogleAuthView(APIView):

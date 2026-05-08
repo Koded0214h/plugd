@@ -13,6 +13,9 @@ TEST_ROLE="${TEST_ROLE:-customer}"
 
 GOOGLE_ID_TOKEN="${GOOGLE_ID_TOKEN:-}"
 GOOGLE_ROLE="${GOOGLE_ROLE:-customer}"
+NEW_PASSWORD="${NEW_PASSWORD:-NewPass123!}"
+RESET_UID="${RESET_UID:-}"
+RESET_TOKEN="${RESET_TOKEN:-}"
 
 PASS=0
 FAIL=0
@@ -113,7 +116,48 @@ else
   fail "Skipping profile check because login token is missing"
 fi
 
-section "4. Google OAuth flow"
+section "4. Forgot password flow"
+FORGOT_PAYLOAD=$(python3 - <<PY
+import json
+print(json.dumps({
+    "email": "${TEST_EMAIL}",
+}))
+PY
+)
+
+parse_response "$(http POST "${USER_API_URL}/auth/password/forgot/" "$FORGOT_PAYLOAD")"
+if [ "$STATUS" = "200" ]; then
+  ok "Forgot-password request returned HTTP 200"
+  echo "  This request exercises the server-side password reset email hook."
+else
+  fail "Forgot-password request failed" "$BODY"
+fi
+
+if [ "$STATUS" = "200" ]; then
+  if [ -n "$RESET_UID" ] && [ -n "$RESET_TOKEN" ]; then
+    RESET_PAYLOAD=$(python3 - <<PY
+import json
+print(json.dumps({
+    "uid": "${RESET_UID}",
+    "token": "${RESET_TOKEN}",
+    "new_password": "${NEW_PASSWORD}",
+    "new_password2": "${NEW_PASSWORD}",
+}))
+PY
+    )
+
+    parse_response "$(http POST "${USER_API_URL}/auth/password/reset/" "$RESET_PAYLOAD")"
+    if [ "$STATUS" = "200" ]; then
+      ok "Password reset returned HTTP 200"
+    else
+      fail "Password reset failed" "$BODY"
+    fi
+  else
+    echo "  Skipping password reset POST. Set RESET_UID and RESET_TOKEN to test /auth/password/reset/."
+  fi
+fi
+
+section "5. Google OAuth flow"
 if [ -z "$GOOGLE_ID_TOKEN" ]; then
   fail "GOOGLE_ID_TOKEN is required to test /auth/google/" "Set GOOGLE_ID_TOKEN to a valid Google ID token from the frontend sign-in flow."
 else
@@ -139,7 +183,7 @@ PY
   fi
 fi
 
-section "5. Summary"
+section "6. Summary"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
 

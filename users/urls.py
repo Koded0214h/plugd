@@ -6,6 +6,8 @@ urlpatterns = [
     # Authentication
     path('auth/register/', views.RegisterView.as_view(), name='auth_register'),
     path('auth/login/', views.LoginView.as_view(), name='auth_login'),
+    path('auth/password/forgot/', views.ForgotPasswordView.as_view(), name='auth_forgot_password'),
+    path('auth/password/reset/', views.ResetPasswordView.as_view(), name='auth_reset_password'),
     path('auth/google/', views.GoogleAuthView.as_view(), name='auth_google'),
     path('auth/admin/register/', views.AdminRegisterView.as_view(), name='auth_admin_register'),
     path('auth/admin/login/', views.AdminLoginView.as_view(), name='auth_admin_login'),
