@@ -170,6 +170,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             total_amount=discounted_total,
             platform_fee=platform_fee,
             provider_amount=provider_amount,
+            coupon=coupon,
             status=initial_status
         )
 
@@ -218,6 +219,7 @@ class BookingDetailSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.full_name', read_only=True)
     provider_name = serializers.CharField(source='provider.full_name', read_only=True)
     stripe_client_secret = serializers.SerializerMethodField()
+    coupon_code = serializers.CharField(source='coupon.code', read_only=True, allow_null=True)
 
     def get_stripe_client_secret(self, obj):
         request = self.context.get('request')
@@ -232,9 +234,13 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'provider', 'provider_name', 'date', 'start_time', 'end_time',
             'pricing_type', 'quantity', 'service_price_at_booking',
             'total_amount', 'platform_fee', 'provider_amount',
-            'stripe_payment_intent_id', 'status', 'created_at', 'stripe_client_secret'
+            'stripe_payment_intent_id', 'status', 'created_at',
+            'stripe_client_secret', 'coupon_code'
         ]
-        read_only_fields = ['id', 'stripe_payment_intent_id', 'status', 'created_at', 'stripe_client_secret']
+        read_only_fields = [
+            'id', 'stripe_payment_intent_id', 'status', 'created_at',
+            'stripe_client_secret', 'coupon_code'
+        ]
 
 
 class TransactionSerializer(serializers.ModelSerializer):

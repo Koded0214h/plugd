@@ -11,6 +11,7 @@ from django.db.models import Sum, F
 from django.utils import timezone
 
 from bookings.models import Availability, Booking, Transaction, PayoutRequest, HubProject, ProjectMember, ProjectPackage
+from coupons.models import Coupon, UserCouponUsage
 from bookings.serializers import (
     AvailabilitySerializer, BookingCreateSerializer, BookingDetailSerializer, 
     TransactionSerializer, PayoutRequestSerializer,
@@ -599,6 +600,102 @@ class BookingRejectView(APIView):
             booking.availability.save(update_fields=['reserved_until'])
 
         return Response({'message': 'Booking rejected and cancelled.'}, status=status.HTTP_200_OK)
+
+
+class ApplyCouponView(APIView):
+    """Apply a coupon to an existing pending booking, replacing the Stripe PaymentIntent."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        booking = get_object_or_404(Booking, pk=pk, customer=request.user)
+
+        if booking.status != 'pending':
+            return Response(
+                {'error': 'Coupon can only be applied to a pending booking.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if booking.coupon_id:
+            return Response(
+                {'error': 'A coupon has already been applied to this booking.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        coupon_code = request.data.get('coupon_code')
+        if not coupon_code:
+            return Response({'error': 'coupon_code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            coupon = Coupon.objects.get(code=coupon_code, is_active=True)
+        except Coupon.DoesNotExist:
+            return Response({'error': 'Invalid coupon code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not coupon.is_valid:
+            return Response({'error': 'This coupon is no longer valid.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_usage = UserCouponUsage.objects.filter(user=request.user, coupon=coupon).count()
+        if user_usage >= coupon.per_user_limit:
+            return Response(
+                {'error': 'You have already used this coupon the maximum number of times.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if coupon.applicable_listings.exists() and not coupon.applicable_listings.filter(id=booking.listing.id).exists():
+            return Response(
+                {'error': 'This coupon is not applicable to this service.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        original_total = booking.service_price_at_booking * Decimal(booking.quantity or 1)
+
+        if coupon.min_order_amount and original_total < coupon.min_order_amount:
+            return Response(
+                {'error': f'Minimum order amount of {coupon.min_order_amount} required for this coupon.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        discounted_total = coupon.apply_discount(original_total)
+        platform_fee = discounted_total * (Decimal(settings.PLATFORM_FEE_PERCENTAGE) / 100)
+        provider_amount = discounted_total - platform_fee
+
+        # Cancel the old PaymentIntent before creating a new one
+        if booking.stripe_payment_intent_id:
+            try:
+                stripe.PaymentIntent.cancel(booking.stripe_payment_intent_id)
+            except stripe.error.InvalidRequestError:
+                pass  # Already cancelled or consumed — safe to continue
+
+        try:
+            intent = stripe.PaymentIntent.create(
+                amount=int(discounted_total * 100),
+                currency=booking.listing.currency.lower(),
+                application_fee_amount=int(platform_fee * 100),
+                transfer_data={'destination': booking.provider.stripe_account_id},
+                metadata={
+                    'booking_id': str(booking.id),
+                    'customer_id': str(booking.customer.id),
+                    'provider_id': str(booking.provider.id),
+                    'coupon_code': coupon.code,
+                }
+            )
+        except stripe.error.StripeError as e:
+            return Response({'error': f'Stripe error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        booking.total_amount = discounted_total
+        booking.platform_fee = platform_fee
+        booking.provider_amount = provider_amount
+        booking.coupon = coupon
+        booking.stripe_payment_intent_id = intent.id
+        booking.stripe_client_secret = intent.client_secret
+        booking.save()
+
+        UserCouponUsage.objects.create(user=request.user, coupon=coupon, booking=booking)
+        coupon.used_count += 1
+        coupon.save(update_fields=['used_count'])
+
+        return Response(
+            BookingDetailSerializer(booking, context={'request': request}).data
+        )
 
 
 class BookingCompleteView(APIView):

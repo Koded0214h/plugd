@@ -221,9 +221,18 @@ class Booking(models.Model):
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True)
     stripe_client_secret = models.CharField(max_length=255, blank=True)
     
+    # Coupon applied at booking
+    coupon = models.ForeignKey(
+        'coupons.Coupon',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bookings'
+    )
+
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
