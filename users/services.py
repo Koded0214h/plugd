@@ -31,7 +31,7 @@ def send_onboarding_email(user, source="registration"):
             recipient_list=[user.email],
             fail_silently=False,
         )
-    except (BadHeaderError, Exception) as exc:
+    except BaseException as exc:
         logger.warning("Unable to send onboarding email to %s: %s", user.email, exc)
 
 
@@ -62,5 +62,5 @@ def send_password_reset_email(user, reset_link):
             recipient_list=[user.email],
             fail_silently=False,
         )
-    except (BadHeaderError, Exception) as exc:
+    except BaseException as exc:
         logger.warning("Unable to send password reset email to %s: %s", user.email, exc)
